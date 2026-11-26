@@ -189,7 +189,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active 
+            statecode = DataverseConstants.StateCode_Active 
         };
         _context.AddToaccounts(account);
         spd_licence pInvestigatorLicence = new() { spd_licenceid = pInvestigatorLicenceId };
@@ -204,7 +204,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_application_spd_licence_manager)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
 
         // Assert
@@ -300,7 +300,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .With(a => a.AgreeToCompleteAndAccurate, true)
             .Create();
 
-        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DynamicsConstants.StateCode_Active };
+        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DataverseConstants.StateCode_Active };
         _context.AddTospd_applications(app);
         spd_licence expiredLicence = new() { spd_licenceid = cmd.ExpiredLicenceId };
         _context.AddTospd_licences(expiredLicence);
@@ -319,7 +319,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active 
+            statecode = DataverseConstants.StateCode_Active 
         };
         _context.AddToaccounts(account);
         spd_licence pInvestigatorLicence = new() { spd_licenceid = pInvestigatorLicenceId };
@@ -334,7 +334,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_application_spd_licence_manager)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
 
         // Assert
@@ -450,7 +450,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddToaccounts(account);
         await _context.SaveChangesAsync();
@@ -463,7 +463,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_businesscontact_spd_application)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
         .FirstOrDefault();
 
         spd_businesscontact newBizContact = await CreateBizContactAsync(account, app, "firstName1", BizContactRoleOptionSet.ControllingMember);
@@ -484,7 +484,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_businesscontact_spd_application)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
         .FirstOrDefault();
 
         // Assert
@@ -587,7 +587,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .With(a => a.AgreeToCompleteAndAccurate, true)
             .Create();
 
-        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DynamicsConstants.StateCode_Active };
+        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DataverseConstants.StateCode_Active };
         _context.AddTospd_applications(app);
         spd_businesscontact bizContact = new()
         {
@@ -611,7 +611,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddToaccounts(account);
         await _context.SaveChangesAsync();
@@ -624,7 +624,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_businesscontact_spd_application)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         var position = _context.spd_positions.FirstOrDefault();
         _context.AddLink(position, nameof(spd_businesscontact.spd_position_spd_businesscontact), bizContact);
@@ -727,7 +727,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .With(a => a.AgreeToCompleteAndAccurate, true)
             .Create();
 
-        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DynamicsConstants.StateCode_Active };
+        spd_application? app = new() { spd_applicationid = cmd.LicenceAppId, statecode = DataverseConstants.StateCode_Active };
         _context.AddTospd_applications(app);
         spd_businesscontact bizContact = new()
         {
@@ -752,7 +752,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddToaccounts(account);
         await _context.SaveChangesAsync();
@@ -765,7 +765,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_businesscontact_spd_application)
             .Where(a => a.spd_applicationid == resp.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
 
         spd_businesscontact? newBizContact = _context.spd_businesscontacts
@@ -872,7 +872,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddToaccounts(biz);
 
@@ -915,7 +915,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_ServiceTypeId)
             .Expand(a => a.spd_application_spd_licencecategory)
             .Where(a => a.spd_applicationid == result.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
 
         // Assert
@@ -997,7 +997,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             address2_stateorprovince = "ResidentialAddressProvince",
             address2_country = "ResidentialAddressCountry",
             address2_postalcode = "xyz789",
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddToaccounts(biz);
 
@@ -1026,7 +1026,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
         spd_licence licence = new()
         {
             spd_licenceid = Guid.NewGuid(),
-            statecode = DynamicsConstants.StateCode_Active,
+            statecode = DataverseConstants.StateCode_Active,
             spd_nameonlicence = "test",
             spd_licencenumber = "XTAXYSQX6J",
             spd_expirydate = DateTime.UtcNow,
@@ -1072,7 +1072,7 @@ public class BizLicApplicationRepositoryTest : IClassFixture<IntegrationTestSetu
             .Expand(a => a.spd_application_spd_licencecategory)
             .Expand(a => a.spd_businesscontact_spd_application)
             .Where(a => a.spd_applicationid == result.LicenceAppId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
 
         spd_businesscontact? bizContact = _context.spd_businesscontacts

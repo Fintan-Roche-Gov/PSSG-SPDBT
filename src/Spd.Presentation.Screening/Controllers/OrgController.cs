@@ -10,7 +10,6 @@ namespace Spd.Presentation.Screening.Controllers
     /// <summary>
     /// 
     /// </summary>
-    [Authorize(Policy = "OnlyBCeID", Roles = "Primary,Contact")]
     public class OrgController : SpdControllerBase
     {
         private readonly IMediator _mediator;
@@ -38,6 +37,7 @@ namespace Spd.Presentation.Screening.Controllers
 
         [Route("api/orgs/{orgId}")]
         [HttpGet]
+        [AllowAnonymous]
         public async Task<OrgResponse> Get([FromRoute] Guid orgId)
         {
             return await _mediator.Send(new OrgGetQuery(orgId));

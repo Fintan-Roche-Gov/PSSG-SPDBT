@@ -18,9 +18,12 @@
     <PackageReference Include="AutoMapper" />
     <PackageReference Include="MediatR" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.PowerPlatform.Dataverse.Client" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Spd.Utilities.Dataverse.EarlyBound\Spd.Utilities.Dataverse.EarlyBound.csproj" />
+    <ProjectReference Include="..\Spd.Utilities.Dataverse\Spd.Utilities.Dataverse.csproj" />
     <ProjectReference Include="..\Spd.Utilities.Dynamics\Spd.Utilities.Dynamics.csproj" />
     <ProjectReference Include="..\Spd.Utilities.FileStorage\Spd.Utilities.FileStorage.csproj" />
     <ProjectReference Include="..\Spd.Utilities.Hosting\Spd.Utilities.Hosting.csproj" />

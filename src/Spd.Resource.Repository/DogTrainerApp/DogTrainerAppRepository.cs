@@ -1,27 +1,34 @@
 using AutoMapper;
 using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
+using Microsoft.Xrm.Sdk;
 using Spd.Resource.Repository.DogBase;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using CrmApplication = Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM.spd_application;
+using CrmContact = Spd.Utilities.Dataverse.EarlyBound.Contact;
+using CrmDogTrainingSchool = Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM.spd_dogtrainingschool;
 
 namespace Spd.Resource.Repository.DogTrainerApp;
 internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRepository
 {
-    public DogTrainerAppRepository(IDynamicsContextFactory ctx, IMapper mapper) : base(ctx, mapper)
+    public DogTrainerAppRepository(IDataverseContextFactory ctx, IMapper mapper) : base(ctx, mapper)
     { }
 
     public async Task<DogTrainerAppCmdResp> CreateDogTrainerAppAsync(CreateDogTrainerAppCmd cmd, CancellationToken ct)
     {
-        spd_application? app = null;
-        contact? contact = null;
+        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+
+        Spd_Application? app = null;
+        CrmContact? contact = null;
         if (cmd.ApplicationTypeCode == ApplicationTypeEnum.New)
         {
-            contact = _mapper.Map<contact>(cmd);
-            contact = await _context.CreateContact(contact, null, null, ct);
+            CrmContact contactLegacy = _mapper.Map<CrmContact>(cmd);
+            contact = contactLegacy.ToEntity<CrmContact>();
+            ebContext.AddObject(contact);
             app = PrepareNewAppDataInDbContext(cmd, contact);
-            _context.SetLink(app, nameof(app.spd_ApplicantId_contact), contact);
+            app.Spd_ApplicantId = contact.ToEntityReference();
         }
         else if (cmd.ApplicationTypeCode == ApplicationTypeEnum.Renewal || cmd.ApplicationTypeCode == ApplicationTypeEnum.Replacement)
         {
@@ -29,73 +36,99 @@ internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRep
             app = PrepareNewAppDataInDbContext(cmd, contact);
             if (contact != null)
             {
-                _context.SetLink(app, nameof(spd_application.spd_ApplicantId_contact), contact);
+                app.Spd_ApplicantId = contact.ToEntityReference();
             }
-            SharedRepositoryFuncs.LinkLicence(_context, cmd.OriginalLicenceId, app);
+            SharedRepositoryFuncs.LinkLicence(ebContext, cmd.OriginalLicenceId, app);
         }
-        await _context.SaveChangesAsync(ct);
+
+        ebContext.SaveChanges();
+
         if (app == null || contact == null)
+        {
             throw new ApiException(HttpStatusCode.InternalServerError);
-        return new DogTrainerAppCmdResp((Guid)app.spd_applicationid, contact.contactid.Value);
+        }
+
+        return new DogTrainerAppCmdResp((Guid)app.Spd_ApplicationId, contact.ContactId.Value);
     }
+
     public async Task<DogTrainerAppResp> GetDogTrainerAppAsync(Guid appId, CancellationToken ct)
     {
-        spd_application? app;
-        try
+        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+        ct.ThrowIfCancellationRequested();
+
+        Spd_Application? app = ebContext.Spd_ApplicationSet
+            .Where(a => a.Spd_ApplicationId == appId)
+            .FirstOrDefault();
+
+        if (app != null)
         {
-            app = await _context.spd_applications
-                .Expand(a => a.spd_ServiceTypeId)
-                .Expand(a => a.spd_ApplicantId_contact)
-                .Expand(a => a.spd_application_spd_dogtrainingschool_ApplicationId)
-                .Where(a => a.spd_applicationid == appId)
-                .FirstOrDefaultAsync(ct);
-        }
-        catch (DataServiceQueryException ex)
-        {
-            if (ex.Response.StatusCode == 404)
-                app = null;
-            else
-                throw;
+            ebContext.LoadProperty(app, nameof(app.Spd_ServiceTypeId));
+            ebContext.LoadProperty(app, nameof(app.Spd_ApplicantId));
+            ebContext.LoadProperty(app, nameof(app.Spd_Application_Spd_DogTrainingSchool_ApplicationId));
+            var trainingSchool = app.Spd_Application_Spd_DogTrainingSchool_ApplicationId.FirstOrDefault();
+            if (trainingSchool != null)
+            {
+                ebContext.LoadProperty(trainingSchool, nameof(trainingSchool.Spd_OrganizationId));
+            }
         }
 
         if (app == null)
+        {
             throw new ApiException(HttpStatusCode.BadRequest, $"Cannot find the application for application id = {appId} ");
+        }
 
-        var response = _mapper.Map<DogTrainerAppResp>(app);
-        _mapper.Map<spd_dogtrainingschool, DogTrainerAppResp>(app.spd_application_spd_dogtrainingschool_ApplicationId.FirstOrDefault(), response);
+        var response = _mapper.Map<DogTrainerAppResp>(app.ToEntity<CrmApplication>());
+        var school = app.Spd_Application_Spd_DogTrainingSchool_ApplicationId.FirstOrDefault();
+        if (school != null)
+        {
+            _mapper.Map<CrmDogTrainingSchool, DogTrainerAppResp>(school.ToEntity<CrmDogTrainingSchool>(), response);
+        }
+
         return response;
     }
 
-    private contact UpdateContact(DogTrainerApp appData, Guid applicantId)
+    private CrmContact UpdateContact(DogTrainerApp appData, Guid applicantId)
     {
-        contact? applicant = _context.contacts.FirstOrDefault(c => c.contactid == applicantId);
+
+        CrmContact? applicant = _context.ContactSet.FirstOrDefault(c => c.ContactId == applicantId);
         if (applicant == null)
         {
             throw new ApiException(HttpStatusCode.BadRequest, "Cannot find the applicant");
         }
         _mapper.Map(appData, applicant);
         _context.UpdateObject(applicant);
+
         return applicant;
     }
 
-    private spd_application PrepareNewAppDataInDbContext(CreateDogTrainerAppCmd appData, contact applicant)
+    private Spd_Application PrepareNewAppDataInDbContext(CreateDogTrainerAppCmd appData, Contact applicant)
     {
-        var app = _mapper.Map<spd_application>(appData);
-        app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
-        _context.AddTospd_applications(app);
+        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+
+        CrmApplication appLegacy = _mapper.Map<CrmApplication>(appData);
+        var app = appLegacy.ToEntity<Spd_Application>();
+        app.StatusCode = Spd_Application_StatusCode.Incomplete;
+        ebContext.AddObject(app);
+
         if (appData.AccreditedSchoolId != Guid.Empty) //spdbt-4496, for allow the invalid data, we found in staging, when do replacement, some existing trainer licence does not have accredit school, which is not correct. but we have to deal with it.
         {
-            spd_dogtrainingschool trainEvent = _mapper.Map<spd_dogtrainingschool>(appData);
-            _context.AddTospd_dogtrainingschools(trainEvent);
-            _context.AddLink(app, nameof(app.spd_application_spd_dogtrainingschool_ApplicationId), trainEvent);
-            _context.SetLink(trainEvent, nameof(trainEvent.spd_ApplicantId), applicant);
-            var school = _context.accounts.Where(a => a.accountid == appData.AccreditedSchoolId).FirstOrDefault();
-            _context.SetLink(trainEvent, nameof(trainEvent.spd_OrganizationId), school);
-            SharedRepositoryFuncs.LinkTrainingEventTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, trainEvent);
+            CrmDogTrainingSchool trainEventLegacy = _mapper.Map<CrmDogTrainingSchool>(appData);
+            var trainEvent = trainEventLegacy.ToEntity<Spd_DogTrainingSchool>();
+            ebContext.AddObject(trainEvent);
+            ebContext.AddLink(app, new Relationship(Spd_Application.Fields.Spd_Application_Spd_DogTrainingSchool_ApplicationId), trainEvent);
+            trainEvent.Spd_ApplicantId = applicant.ToEntityReference();
+
+            var school = ebContext.AccountSet.Where(a => a.AccountId == appData.AccreditedSchoolId).FirstOrDefault();
+            if (school != null)
+            {
+                trainEvent.Spd_OrganizationId = school.ToEntityReference();
+            }
+
+            SharedRepositoryFuncs.LinkTrainingEventTeam(ebContext, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, trainEvent);
         }
 
-        SharedRepositoryFuncs.LinkServiceType(_context, appData.ServiceTypeCode, app);
-        SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+        SharedRepositoryFuncs.LinkServiceType(ebContext, appData.ServiceTypeCode, app);
+        SharedRepositoryFuncs.LinkTeam(ebContext, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 }

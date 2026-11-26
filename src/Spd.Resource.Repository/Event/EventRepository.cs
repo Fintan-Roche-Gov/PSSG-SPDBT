@@ -1,82 +1,103 @@
 using AutoMapper;
 using MediatR;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
-using Microsoft.OData.Client;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
-using Spd.Utilities.Shared.Tools;
 
 namespace Spd.Resource.Repository.Event;
 internal class EventRepository : IEventRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<IEventRepository> _logger;
 
-    public EventRepository(IDynamicsContextFactory ctx,
+    public EventRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx,
         IMapper mapper,
         ILogger<IEventRepository> logger)
     {
-        _context = ctx.Create();
+        _context = ctx;
         _mapper = mapper;
         _logger = logger;
     }
 
     public async Task<EventResp?> GetAsync(Guid eventId, CancellationToken ct)
     {
-        spd_eventqueue? eventQueue = await _context.GetEventById(eventId, ct);
+        Spd_EventQueue? eventQueue = _context.Spd_EventQueueSet
+            .Where(e => e.Spd_EventQueueId == eventId)
+            .FirstOrDefault();
+
         return _mapper.Map<EventResp>(eventQueue);
     }
 
     public async Task<IEnumerable<EventResp>?> QueryAsync(EventQuery qry, CancellationToken ct)
     {
-        IQueryable<spd_eventqueue> eventQueues = _context.spd_eventqueues;
+        IQueryable<Spd_EventQueue> eventQueues = _context.Spd_EventQueueSet;
+
         if (qry.EventStatusReasonEnum != null)
         {
-            int status = (int)SharedMappingFuncs.GetOptionset<EventStatusReasonEnum, EventStatusReasonOptionSet>(qry.EventStatusReasonEnum);
-            eventQueues = eventQueues.Where(i => i.statuscode == status);
+            int? status = (int?)SharedMappingFuncs.GetOptionset<EventStatusReasonEnum, EventStatusReasonOptionSet>(qry.EventStatusReasonEnum);
+            eventQueues = eventQueues.Where(i => i.StatusCode != null && (int)i.StatusCode == status);
         }
 
         if (qry.CutOffDateTime != null)
-            eventQueues = eventQueues.Where(e => e.spd_eventdate < qry.CutOffDateTime);
+            eventQueues = eventQueues.Where(e => e.Spd_EventDate < qry.CutOffDateTime);
+
+        List<Spd_EventQueue> eventQueuesList = eventQueues.ToList();
 
         if (qry.EventTypeEnums != null && qry.EventTypeEnums.Any())
         {
-            int?[] types = qry.EventTypeEnums.Select(e => (int?)SharedMappingFuncs.GetOptionset<EventTypeEnum, EventTypeOptionSet>(e)).ToArray();
-            var predicate = PredicateBuilder.BuildOrPredicate<spd_eventqueue, int?>("spd_eventtype", types);
-            eventQueues = eventQueues.Where(predicate);
+            int?[] types = qry.EventTypeEnums
+                .Select(e => (int?)SharedMappingFuncs.GetOptionset<EventTypeEnum, EventTypeOptionSet>(e))
+                .ToArray();
+            eventQueuesList = eventQueuesList
+                .Where(e => e.Spd_EventType != null && types.Contains((int)e.Spd_EventType))
+                .ToList();
         }
-        var eventQueuesList = eventQueues.ToList();
 
         return _mapper.Map<IEnumerable<EventResp>>(eventQueuesList);
     }
 
     public async Task<Unit> ManageAsync(EventUpdateCmd cmd, CancellationToken ct)
     {
-        spd_eventqueue? eventQueue = await _context.GetEventById(cmd.Id, ct);
-        _mapper.Map<EventUpdateCmd, spd_eventqueue>(cmd, eventQueue);
-        _context.UpdateObject(eventQueue);
-        await _context.SaveChangesAsync(ct);
-        return default;
+        Spd_EventQueue? eventQueue = _context.Spd_EventQueueSet
+            .Where(e => e.Spd_EventQueueId == cmd.Id)
+            .FirstOrDefault();
+
+        if (eventQueue != null)
+        {
+            _mapper.Map(cmd, eventQueue);
+            _context.UpdateObject(eventQueue);
+            _context.SaveChanges();
+        }
+
+        return Unit.Value;
     }
+
     public async Task<Unit> ManageInBatchAsync(List<EventUpdateCmd> cmds, CancellationToken ct)
     {
         try
         {
             foreach (var cmd in cmds)
             {
-                spd_eventqueue? eventQueue = await _context.spd_eventqueues
-                    .Where(l => l.spd_eventqueueid == cmd.Id)
-                    .FirstOrDefaultAsync(ct);
-                _mapper.Map<EventUpdateCmd, spd_eventqueue>(cmd, eventQueue);
-                _context.UpdateObject(eventQueue);
+                Spd_EventQueue? eventQueue = _context.Spd_EventQueueSet
+                    .Where(e => e.Spd_EventQueueId == cmd.Id)
+                    .FirstOrDefault();
+
+                if (eventQueue != null)
+                {
+                    _mapper.Map(cmd, eventQueue);
+                    _context.UpdateObject(eventQueue);
+                }
             }
-            await _context.SaveChangesAsync(SaveChangesOptions.BatchWithSingleChangeset, ct);
+
+            _context.SaveChanges();
         }
         catch (Exception e)
         {
             _logger.LogError(e.ToString());
         }
-        return default;
+
+        return Unit.Value;
     }
 }

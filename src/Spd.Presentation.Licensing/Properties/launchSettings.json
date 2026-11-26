@@ -1,14 +1,28 @@
-﻿{
-    "$schema": "https://json.schemastore.org/launchsettings.json",
-    "profiles": {
-        "spd.presentation.licensing": {
-            "commandName": "Project",
-            "launchBrowser": false,
-            "applicationUrl": "http://localhost:5114",
-            "environmentVariables": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES": "Microsoft.AspNetCore.SpaProxy"
-            }
-        }
+{
+  "profiles": {
+    "spd.presentation.licensing": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES": "Microsoft.AspNetCore.SpaProxy"
+      },
+      "applicationUrl": "http://localhost:5114"
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
     }
+  },
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:62165/",
+      "sslPort": 44357
+    }
+  }
 }

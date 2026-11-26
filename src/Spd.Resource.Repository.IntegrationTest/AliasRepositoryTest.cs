@@ -60,7 +60,7 @@ public class AliasRepositoryTest : IClassFixture<IntegrationTestSetup>
         await _aliasRepository.DeleteAliasAsync(aliasToRemove, CancellationToken.None);
 
         //Assert
-        spd_alias? alias = await _context.spd_aliases.Where(a => a.spd_aliasid == newAliasId && a.statecode == DynamicsConstants.StateCode_Inactive).FirstOrDefaultAsync();
+        spd_alias? alias = await _context.spd_aliases.Where(a => a.spd_aliasid == newAliasId && a.statecode == DataverseConstants.StateCode_Inactive).FirstOrDefaultAsync();
         Assert.NotNull(alias);
     }
 

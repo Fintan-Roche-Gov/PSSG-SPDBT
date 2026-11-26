@@ -31,32 +31,32 @@ namespace Spd.Utilities.BCeIDWS
         {
             try
             {
-                AccountDetailResponse accountDetailResp = await _client.getAccountDetailAsync(new AccountDetailRequest()
-                {
-                    onlineServiceId = _config.OnlineServiceId,
-                    requesterAccountTypeCode = BCeIDAccountTypeCode.Internal,
-                    requesterUserGuid = qry.RequesterGuid,
-                    userGuid = qry.UserGuid,
-                    accountTypeCode = BCeIDAccountTypeCode.Internal,
-                });
+                //AccountDetailResponse accountDetailResp = await _client.getAccountDetailAsync(new AccountDetailRequest()
+                //{
+                //    onlineServiceId = _config.OnlineServiceId,
+                //    requesterAccountTypeCode = BCeIDAccountTypeCode.Internal,
+                //    requesterUserGuid = qry.RequesterGuid,
+                //    userGuid = qry.UserGuid,
+                //    accountTypeCode = BCeIDAccountTypeCode.Internal,
+                //});
 
-                await _client.getInternalUserGroupInfoAsync(new InternalUserGroupInfoRequest()
-                {
-                    onlineServiceId = _config.OnlineServiceId,
-                    requesterAccountTypeCode = BCeIDAccountTypeCode.Internal,
-                    requesterUserGuid = qry.RequesterGuid,
-                    userGuid = qry.UserGuid,
-                    groupMatches = new BCeIDInternalGroupMatch[]
-                   {
-                    new() {
-                        groupName="Portal_Service_Account"//"MY_IDIR_SECURITY_GROUP"
-                    }
-                   }
-                });
+                //await _client.getInternalUserGroupInfoAsync(new InternalUserGroupInfoRequest()
+                //{
+                //    onlineServiceId = _config.OnlineServiceId,
+                //    requesterAccountTypeCode = BCeIDAccountTypeCode.Internal,
+                //    requesterUserGuid = qry.RequesterGuid,
+                //    userGuid = qry.UserGuid,
+                //    groupMatches = new BCeIDInternalGroupMatch[]
+                //   {
+                //    new() {
+                //        groupName="Portal_Service_Account"//"MY_IDIR_SECURITY_GROUP"
+                //    }
+                //   }
+                //});
                 return new IDIRUserDetailResult
                 {
-                    MinistryCode = accountDetailResp.account.internalIdentity.organizationCode.value,
-                    MinistryName = accountDetailResp.account.internalIdentity.company.value,
+                    MinistryCode = "AG",
+                    MinistryName = "Ministry Of Attorney General",
                 };
             }
             catch (Exception ex)

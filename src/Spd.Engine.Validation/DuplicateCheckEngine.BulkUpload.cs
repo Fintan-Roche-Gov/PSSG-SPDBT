@@ -83,14 +83,14 @@ namespace Spd.Engine.Validation
 
         private bool MeetDuplicateStatusCriteria(List<spd_application> apps)
         {
-            if (apps.Any(a => a.statecode == DynamicsConstants.StateCode_Active)) return true;
+            if (apps.Any(a => a.statecode == DataverseConstants.StateCode_Active)) return true;
 
             DateTimeOffset completedAppCutOffTime = DateTimeOffset.UtcNow.AddDays(-28);
             foreach (spd_application app in apps)
             {
                 _context.LoadPropertyAsync(app, nameof(spd_application.spd_spd_application_incident));
                 var relatedCases = app.spd_spd_application_incident.ToList();
-                if (relatedCases.Any(c => c.statecode == DynamicsConstants.StateCode_Active ||
+                if (relatedCases.Any(c => c.statecode == DataverseConstants.StateCode_Active ||
                         (c.modifiedon > completedAppCutOffTime && (c.statuscode == (int)CaseStatusOptionSet.Cancelled || c.statuscode == (int)CaseStatusOptionSet.Completed))))
                     return true;
             }

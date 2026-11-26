@@ -1,20 +1,20 @@
 ﻿using AutoMapper;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
 
 namespace Spd.Resource.Repository.Config
 {
-    internal class ConfigRepository(IDynamicsContextFactory ctx, IMapper _mapper) : IConfigRepository
+    internal class ConfigRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx, IMapper _mapper) : IConfigRepository
     {
-        private readonly DynamicsContext _dynaContext = ctx.Create();
+        private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _dynaContext = ctx;
 
         public async Task<ConfigResult> Query(ConfigQuery query, CancellationToken ct)
         {
-            var bcgov_configs = _dynaContext.bcgov_configs.Where(c => c.statecode != DynamicsConstants.StateCode_Inactive);
+            var bcgov_configs = _dynaContext.Bcgov_ConfigSet.Where(c => c.StateCode != Bcgov_Config_StateCode.Inactive);
 
-            if (query.Key != null) bcgov_configs = bcgov_configs.Where(c => c.bcgov_key == query.Key);
-            if (query.Group != null) bcgov_configs = bcgov_configs.Where(c => c.bcgov_group == query.Group);
+            if (query.Key != null) bcgov_configs = bcgov_configs.Where(c => c.Bcgov_Key == query.Key);
+            if (query.Group != null) bcgov_configs = bcgov_configs.Where(c => c.Bcgov_Group == query.Group);
 
-            return new ConfigResult(_mapper.Map<IEnumerable<ConfigItem>>(await bcgov_configs.GetAllPagesAsync(ct)));
+            return new ConfigResult(_mapper.Map<IEnumerable<ConfigItem>>(bcgov_configs.ToList()));
         }
     }
 }

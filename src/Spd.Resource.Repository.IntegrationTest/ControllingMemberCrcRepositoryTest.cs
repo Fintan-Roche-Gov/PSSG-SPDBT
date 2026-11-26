@@ -71,7 +71,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);
@@ -172,7 +172,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);
@@ -241,7 +241,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);
@@ -314,7 +314,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);
@@ -392,7 +392,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);
@@ -505,7 +505,7 @@ public class ControllingMemberCrcRepositoryTest : IClassFixture<IntegrationTestS
         spd_businesscontact bizContact = new spd_businesscontact()
         {
             spd_businesscontactid = bizContactId,
-            statecode = DynamicsConstants.StateCode_Active
+            statecode = DataverseConstants.StateCode_Active
         };
         _context.AddTospd_businesscontacts(bizContact);
         _context.AddLink(bizContact, nameof(bizContact.spd_businesscontact_spd_application), bizApp);

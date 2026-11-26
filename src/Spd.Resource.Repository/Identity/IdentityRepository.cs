@@ -1,19 +1,19 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
 using Spd.Resource.Repository.Registration;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 
 namespace Spd.Resource.Repository.Identity
 {
     internal class IdentityRepository : IIdentityRepository
     {
-        private readonly DynamicsContext _dynaContext;
+        private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _dynaContext;
         private readonly IMapper _mapper;
 
-        public IdentityRepository(IDynamicsContextFactory ctx, IMapper mapper, ILogger<IdentityRepository> logger)
+        public IdentityRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx, IMapper mapper, ILogger<IdentityRepository> logger)
         {
-            _dynaContext = ctx.Create();
+            _dynaContext = ctx;
             _mapper = mapper;
         }
 
@@ -37,35 +37,26 @@ namespace Spd.Resource.Repository.Identity
 
         private async Task<IdentityQueryResult> HandleIdentityQry(IdentityQry qry, CancellationToken ct)
         {
-            IQueryable<spd_identity> identities;
-            if (qry.IdentityProviderType != null && qry.IdentityProviderType == IdentityProviderTypeEnum.BcServicesCard)
-            {
-                identities = _dynaContext.spd_identities.Expand(i => i.spd_ContactId);
-            }
-            else
-            {
-                identities = _dynaContext.spd_identities;
-            }
+            IQueryable<Spd_Identity> identities = _dynaContext.Spd_IdentitySet;
 
             if (qry.IdentityProviderType != null)
             {
-                int type = (int)Enum.Parse<IdentityTypeOptionSet>(qry.IdentityProviderType.ToString());
-                identities = identities.Where(i => i.spd_type == type);
+                identities = identities.Where(i => i.Spd_Type == Enum.Parse<Spd_IdentityProvider>(qry.IdentityProviderType.ToString()));
             }
 
-            if (!qry.includeInactive) identities = identities.Where(i => i.statecode == DynamicsConstants.StateCode_Active);
-            if (qry.UserGuid != null) identities = identities.Where(i => i.spd_userguid == qry.UserGuid);
-            if (qry.OrgGuid != null) identities = identities.Where(i => i.spd_orgguid == qry.OrgGuid.ToString());
+            if (!qry.includeInactive) identities = identities.Where(i => i.StateCode == Spd_Identity_StateCode.Active);
+            if (qry.UserGuid != null) identities = identities.Where(i => i.Spd_UserGuid == qry.UserGuid);
+            if (qry.OrgGuid != null) identities = identities.Where(i => i.Spd_OrgGuid == qry.OrgGuid.ToString());
 
 
-            return new IdentityQueryResult(_mapper.Map<IEnumerable<Identity>>(identities.ToList()));
+            return new IdentityQueryResult(_mapper.Map<IEnumerable<Identity>>(identities.ToList(), opts => opts.Items["DataverseContext"] = _dynaContext));
         }
 
         private async Task<IdentityCmdResult> HandleCreateIdentityCmd(CreateIdentityCmd cmd, CancellationToken ct)
         {
-            spd_identity identity = _mapper.Map<spd_identity>(cmd);
-            _dynaContext.AddTospd_identities(identity);
-            await _dynaContext.SaveChangesAsync(ct);
+            Spd_Identity identity = _mapper.Map<Spd_Identity>(cmd);
+            _dynaContext.AddObject(identity);
+            _dynaContext.SaveChanges();
 
             return _mapper.Map<IdentityCmdResult>(identity);
         }

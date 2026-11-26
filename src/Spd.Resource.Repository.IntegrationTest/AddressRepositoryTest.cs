@@ -109,8 +109,8 @@ public class AddressRepositoryTest : IClassFixture<IntegrationTestSetup>
         spd_address address = new spd_address() 
         { 
             spd_addressid = Guid.NewGuid(), 
-            statecode = DynamicsConstants.StateCode_Active, 
-            statuscode = DynamicsConstants.StatusCode_Active 
+            statecode = DataverseConstants.StateCode_Active, 
+            statuscode = DataverseConstants.StatusCode_Active 
         };
 
         _context.AddTospd_addresses(address);
@@ -124,8 +124,8 @@ public class AddressRepositoryTest : IClassFixture<IntegrationTestSetup>
         // Assert
         var deletedAddress = _context.spd_addresses.Where(
             a => a.spd_addressid == address.spd_addressid && 
-            a.statecode == DynamicsConstants.StateCode_Inactive &&
-            a.statuscode == DynamicsConstants.StatusCode_Inactive)
+            a.statecode == DataverseConstants.StateCode_Inactive &&
+            a.statuscode == DataverseConstants.StatusCode_Inactive)
             .ToList();
 
         Assert.NotEmpty(deletedAddress);
@@ -157,8 +157,8 @@ public class AddressRepositoryTest : IClassFixture<IntegrationTestSetup>
             spd_branchmanagername = "manager",
             spd_branchphone = "80000000",
             spd_branchemail = "test@test.com",
-            statecode = DynamicsConstants.StateCode_Active,
-            statuscode = DynamicsConstants.StatusCode_Active
+            statecode = DataverseConstants.StateCode_Active,
+            statuscode = DataverseConstants.StatusCode_Active
         };
 
         _context.AddTospd_addresses(address);

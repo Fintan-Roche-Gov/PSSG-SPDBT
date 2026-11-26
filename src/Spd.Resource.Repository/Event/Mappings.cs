@@ -1,5 +1,5 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 
 namespace Spd.Resource.Repository.Event
@@ -8,21 +8,27 @@ namespace Spd.Resource.Repository.Event
     {
         public Mappings()
         {
-            _ = CreateMap<spd_eventqueue, EventResp>()
-             .ForMember(d => d.Id, opt => opt.MapFrom(s => s.spd_eventqueueid))
-             .ForMember(d => d.EventTypeEnum, opt => opt.MapFrom(s => SharedMappingFuncs.GetEnum<EventTypeOptionSet, EventTypeEnum>(s.spd_eventtype)))
-             .ForMember(d => d.RegardingObjectId, opt => opt.MapFrom(s => s.spd_regardingobjectid))
-             .ForMember(d => d.JobId, opt => opt.MapFrom(s => s.spd_jobid))
-             .ForMember(d => d.LastExeTime, opt => opt.MapFrom(s => s.spd_timestamp))
-             .ForMember(d => d.RegardingObjectName, opt => opt.MapFrom(s => s.spd_regardingobjectlogicalname));
+            _ = CreateMap<Spd_EventQueue, EventResp>()
+             .ForMember(d => d.Id, opt => opt.MapFrom(s => s.Spd_EventQueueId ?? Guid.Empty))
+             .ForMember(d => d.EventTypeEnum, opt => opt.MapFrom(s => SharedMappingFuncs.GetEnum<EventTypeOptionSet, EventTypeEnum>((int?)s.Spd_EventType)))
+             .ForMember(d => d.RegardingObjectId, opt => opt.MapFrom(s => Guid.TryParse(s.Spd_RegardingObjectId, out Guid id) ? id : (Guid?)null))
+             .ForMember(d => d.JobId, opt => opt.MapFrom(s => s.Spd_JobId))
+             .ForMember(d => d.LastExeTime, opt => opt.MapFrom(s => s.Spd_Timestamp))
+             .ForMember(d => d.RegardingObjectName, opt => opt.MapFrom(s => s.Spd_RegardingObjectLogicalName));
 
-            _ = CreateMap<EventUpdateCmd, spd_eventqueue>()
-             .ForMember(d => d.spd_eventqueueid, opt => opt.Ignore())
-             .ForMember(d => d.spd_timestamp, opt => opt.MapFrom(s => s.LastExeTime))
-             .ForMember(d => d.spd_errordescription, opt => opt.MapFrom(s => s.ErrorDescription))
-             .ForMember(d => d.spd_jobid, opt => opt.MapFrom(s => s.JobId))
-             .ForMember(d => d.statecode, opt => opt.MapFrom(s => s.StateCode))
-             .ForMember(d => d.statuscode, opt => opt.MapFrom(s => (int)SharedMappingFuncs.GetOptionset<EventStatusReasonEnum, EventStatusReasonOptionSet>(s.EventStatusReasonEnum)));
+            _ = CreateMap<EventUpdateCmd, Spd_EventQueue>()
+             .ForMember(d => d.Spd_EventQueueId, opt => opt.Ignore())
+             .ForMember(d => d.Spd_Timestamp, opt => opt.MapFrom(s => s.LastExeTime))
+             .ForMember(d => d.Spd_ErrorDescription, opt => opt.MapFrom(s => s.ErrorDescription))
+             .ForMember(d => d.Spd_JobId, opt => opt.MapFrom(s => s.JobId))
+             .ForMember(d => d.StateCode, opt => opt.MapFrom(s => (Spd_EventQueue_StateCode?)s.StateCode))
+             .ForMember(d => d.StatusCode, opt => opt.MapFrom(s => GetStatusCode(s.EventStatusReasonEnum)));
+        }
+
+        private static Spd_EventQueue_StatusCode? GetStatusCode(EventStatusReasonEnum status)
+        {
+            int? option = (int?)SharedMappingFuncs.GetOptionset<EventStatusReasonEnum, EventStatusReasonOptionSet>(status);
+            return option == null ? null : (Spd_EventQueue_StatusCode?)option;
         }
     }
 }

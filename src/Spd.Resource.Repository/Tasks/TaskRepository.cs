@@ -1,16 +1,20 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
+using ContactEntity = Spd.Utilities.Dataverse.EarlyBound.Contact;
+using IncidentEntity = Spd.Utilities.Dataverse.EarlyBound.Incident;
+using TaskEntity = Spd.Utilities.Dataverse.EarlyBound.Task;
 
 namespace Spd.Resource.Repository.Tasks;
 internal class TaskRepository : ITaskRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
     private readonly IMapper _mapper;
 
-    public TaskRepository(IDynamicsContextFactory ctx, IMapper mapper)
+    public TaskRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx, IMapper mapper)
     {
-        _context = ctx.Create();
+        _context = ctx;
         _mapper = mapper;
     }
 
@@ -25,51 +29,57 @@ internal class TaskRepository : ITaskRepository
 
     private async Task<TaskResp> CreateTaskAsync(CreateTaskCmd cmd, CancellationToken ct)
     {
-        task t = _mapper.Map<task>(cmd);
-        _context.AddTotasks(t);
+        TaskEntity t = _mapper.Map<TaskEntity>(cmd);
+        _context.AddObject(t);
 
         if (cmd.RegardingContactId != null)
         {
-            contact? contact = _context.contacts.Where(c => c.contactid == cmd.RegardingContactId).FirstOrDefault();
+            ContactEntity? contact = _context.ContactSet.Where(c => c.ContactId == cmd.RegardingContactId).FirstOrDefault();
             if (contact == null)
             {
                 throw new ArgumentException($"cannot find contact for contactid = {cmd.RegardingContactId}.");
             }
-            _context.SetLink(t, nameof(t.regardingobjectid_contact), contact);
+            t.RegardingObjectId = new EntityReference(ContactEntity.EntityLogicalName, contact.ContactId!.Value);
         }
 
         if (cmd.RegardingCaseId != null)
         {
-            incident? incident = _context.incidents.Where(c => c.incidentid == cmd.RegardingCaseId).FirstOrDefault();
+            IncidentEntity? incident = _context.IncidentSet.Where(c => c.IncidentId == cmd.RegardingCaseId).FirstOrDefault();
             if (incident == null)
             {
                 throw new ArgumentException($"cannot find incident for incidentid = {cmd.RegardingCaseId}.");
             }
-            _context.SetLink(t, nameof(t.regardingobjectid_incident), incident);
+            t.RegardingObjectId = new EntityReference(IncidentEntity.EntityLogicalName, incident.IncidentId!.Value);
         }
 
         if (cmd.RegardingAccountId != null)
         {
-            account? account = _context.accounts.Where(c => c.accountid == cmd.RegardingAccountId).FirstOrDefault();
+            Account? account = _context.AccountSet.Where(c => c.AccountId == cmd.RegardingAccountId).FirstOrDefault();
             if (account == null)
             {
                 throw new ArgumentException($"cannot find account for accountid = {cmd.RegardingAccountId}.");
             }
-            _context.SetLink(t, nameof(t.regardingobjectid_account), account);
+            t.RegardingObjectId = new EntityReference(Account.EntityLogicalName, account.AccountId!.Value);
         }
 
         if (cmd.AssignedTeamId != null)
         {
-            team? serviceTeam = await _context.teams.Where(t => t.teamid == cmd.AssignedTeamId).FirstOrDefaultAsync(ct);
-            _context.SetLink(t, nameof(t.ownerid), serviceTeam);
+            Team? serviceTeam = _context.TeamSet.Where(team => team.TeamId == cmd.AssignedTeamId).FirstOrDefault();
+            if (serviceTeam != null)
+            {
+                t.OwnerId = new EntityReference(Team.EntityLogicalName, serviceTeam.TeamId!.Value);
+            }
         }
 
         if (cmd.LicenceId != null)
         {
-            spd_licence? lic = await _context.spd_licences.Where(t => t.spd_licenceid == cmd.LicenceId).FirstOrDefaultAsync(ct);
-            _context.SetLink(t, nameof(t.spd_LicenceId_Task), lic);
+            Spd_Licence? lic = _context.Spd_LicenceSet.Where(licence => licence.Spd_LicenceId == cmd.LicenceId).FirstOrDefault();
+            if (lic != null)
+            {
+                t.Spd_LicenceId = new EntityReference(Spd_Licence.EntityLogicalName, lic.Spd_LicenceId!.Value);
+            }
         }
-        await _context.SaveChangesAsync(ct);
-        return new TaskResp { TaskId = t.activityid ?? Guid.Empty };
+        _context.SaveChanges();
+        return new TaskResp { TaskId = t.ActivityId ?? Guid.Empty };
     }
 }

@@ -1,6 +1,5 @@
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using Spd.Utilities.Shared.Tools;
 using System.Net;
@@ -13,31 +12,65 @@ internal partial class ApplicationRepository : IApplicationRepository
         if (clearanceListQry == null || clearanceListQry.FilterBy?.OrgId == null)
             throw new ArgumentNullException("clearanceListQry.FilterBy.OrgId", "Must query clearances by organization id.");
 
-        string filterStr = GetClearanceFilterString(clearanceListQry.FilterBy);
-        string sortStr = GetClearanceSortBy(clearanceListQry.SortBy);
-        var clearanceaccesses = _context.spd_clearanceaccesses
-            .AddQueryOption("$filter", $"{filterStr}")
-            .AddQueryOption("$orderby", $"{sortStr}")
-            .IncludeCount();
+        ct.ThrowIfCancellationRequested();
+        ClearanceAccessStatusOptionSet status = Enum.Parse<ClearanceAccessStatusOptionSet>(clearanceListQry.FilterBy.ClearanceAccessStatus.ToString());
+        var dataverseStatus = Enum.Parse<Spd_ClearanceAccess_StatusCode>(status.ToString());
+        DateOnly currentDate = DateOnlyHelper.GetCurrentPCTDate();
+        DateTime expiryCutoff = currentDate.AddDays(90).ToDateTime(TimeOnly.MinValue);
+
+        IQueryable<Spd_ClearanceAccess> clearanceaccesses = _context.Spd_ClearanceAccessSet
+            .Where(c => c.Spd_OrganizationId != null && c.Spd_OrganizationId.Id == clearanceListQry.FilterBy.OrgId)
+            .Where(c => c.StatusCode == dataverseStatus)
+            .Where(c => c.Spd_ExpiryDate != null && c.Spd_ExpiryDate <= expiryCutoff);
+
+        if (!string.IsNullOrWhiteSpace(clearanceListQry.FilterBy.NameOrEmailContains))
+        {
+            string contains = clearanceListQry.FilterBy.NameOrEmailContains;
+            clearanceaccesses = clearanceaccesses.Where(c =>
+                (c.Spd_ApplicantFullName ?? string.Empty).Contains(contains) ||
+                (c.Spd_EmailAddress1 ?? string.Empty).Contains(contains));
+        }
+
+        clearanceaccesses = GetClearanceSortBy(clearanceListQry.SortBy) switch
+        {
+            "spd_expirydate" => clearanceaccesses.OrderBy(c => c.Spd_ExpiryDate),
+            "spd_expirydate desc" => clearanceaccesses.OrderByDescending(c => c.Spd_ExpiryDate),
+            "spd_applicantfullname desc" => clearanceaccesses.OrderByDescending(c => c.Spd_ApplicantFullName),
+            "spd_applicantfullname" => clearanceaccesses.OrderBy(c => c.Spd_ApplicantFullName),
+            "spd_contractedcompanyname desc" => clearanceaccesses.OrderByDescending(c => c.Spd_ContractedCompanyName),
+            "spd_contractedcompanyname" => clearanceaccesses.OrderBy(c => c.Spd_ContractedCompanyName),
+            _ => clearanceaccesses.OrderByDescending(c => c.CreatedOn),
+        };
+
+        int totalCount = clearanceaccesses.Count();
 
         if (clearanceListQry.Paging != null)
         {
             int skip = clearanceListQry.Paging.Page * clearanceListQry.Paging.PageSize;
-            clearanceaccesses = clearanceaccesses
-                .AddQueryOption("$skip", $"{skip}")
-                .AddQueryOption("$top", $"{clearanceListQry.Paging.PageSize}");
+            clearanceaccesses = clearanceaccesses.Skip(skip).Take(clearanceListQry.Paging.PageSize);
         }
 
-        var result = (QueryOperationResponse<spd_clearanceaccess>)await clearanceaccesses.ExecuteAsync(ct);
+        var result = clearanceaccesses.ToList();
 
         var response = new ClearanceAccessListResp();
-        response.Clearances = _mapper.Map<IEnumerable<ClearanceAccessResp>>(result);
+        response.Clearances = result.Select(s => new ClearanceAccessResp
+        {
+            Id = s.Spd_ClearanceAccessId ?? Guid.Empty,
+            FirstName = s.Spd_ApplicantFirstName ?? string.Empty,
+            LastName = s.Spd_ApplicantLastName ?? string.Empty,
+            Email = s.Spd_EmailAddress1 ?? string.Empty,
+            ExpiresOn = s.Spd_ExpiryDate,
+            Facility = s.Spd_ContractedCompanyName ?? string.Empty,
+            Status = s.StatusCode?.ToString() ?? string.Empty,
+            ClearanceId = s.Spd_ClearanceId?.Id ?? Guid.Empty,
+            ClearanceAccessNumber = s.Spd_ClearanceAccessNumber ?? string.Empty,
+        });
         if (clearanceListQry.Paging != null)
         {
             response.Pagination = new PaginationResp();
             response.Pagination.PageSize = clearanceListQry.Paging.PageSize;
             response.Pagination.PageIndex = clearanceListQry.Paging.Page;
-            response.Pagination.Length = (int)result.Count;
+            response.Pagination.Length = totalCount;
         }
 
         return response;
@@ -45,46 +78,46 @@ internal partial class ApplicationRepository : IApplicationRepository
 
     public async Task<ClearanceListResp> QueryAsync(ClearanceQry clearanceQry, CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         ClearanceListResp resp = new();
 
-        var clearances = _context.spd_clearances
-            .Expand(c => c.spd_CaseID)
-            .Where(c => c.statecode != DynamicsConstants.StateCode_Inactive);
+        IQueryable<Spd_Clearance> clearances = _context.Spd_ClearanceSet
+            .Where(c => c.StateCode != Spd_Clearance_StateCode.Inactive);
 
         if (clearanceQry.ClearanceId != null)
         {
-            clearances = clearances.Where(c => c.spd_clearanceid == clearanceQry.ClearanceId);
+            clearances = clearances.Where(c => c.Spd_ClearanceId == clearanceQry.ClearanceId);
         }
 
         if (clearanceQry.ServiceType != null)
         {
-            var keyExisted = DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(clearanceQry.ServiceType.ToString(), out Guid stGuid);
+            var keyExisted = Spd.Utilities.Dataverse.DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(clearanceQry.ServiceType.ToString(), out Guid stGuid);
             if (!keyExisted)
                 throw new ArgumentException("invalid service type");
-            clearances = clearances.Where(c => c._spd_servicetype_value == stGuid);
+            clearances = clearances.Where(c => c.Spd_ServiceType != null && c.Spd_ServiceType.Id == stGuid);
         }
 
         if (clearanceQry.ContactId != null)
-            clearances = clearances.Where(c => c._spd_contactid_value == clearanceQry.ContactId);
+            clearances = clearances.Where(c => c.Spd_ContactId != null && c.Spd_ContactId.Id == clearanceQry.ContactId);
 
         if (clearanceQry.FromDate != null)
-            clearances = clearances.Where(c => c.spd_expirydate > clearanceQry.FromDate);
+            clearances = clearances.Where(c => c.Spd_ExpiryDate > clearanceQry.FromDate);
 
         if (clearanceQry.WorkWith != null)
         {
             if (clearanceQry.WorkWith == EmployeeInteractionTypeCode.Neither)
-                clearances = clearances.Where(c => c.spd_workswith == null);
+                clearances = clearances.Where(c => c.Spd_WorksWith == null);
             else
             {
-                int workwith = (int)Enum.Parse<WorksWithChildrenOptionSet>(clearanceQry.WorkWith.ToString());
-                clearances = clearances.Where(c => c.spd_workswith == workwith);
+                Spd_OrganizationClientBase workwith = Enum.Parse<Spd_OrganizationClientBase>(clearanceQry.WorkWith.ToString());
+                clearances = clearances.Where(c => c.Spd_WorksWith == workwith);
             }
         }
 
         if (clearanceQry.Shareable != null)
         {
-            clearances = (bool)clearanceQry.Shareable ? clearances.Where(c => c.spd_sharable == (int)YesNoOptionSet.Yes) :
-                clearances.Where(c => c.spd_sharable == (int)YesNoOptionSet.No);
+            clearances = (bool)clearanceQry.Shareable ? clearances.Where(c => c.Spd_Sharable == Spd_YesNo.Yes) :
+                clearances.Where(c => c.Spd_Sharable == Spd_YesNo.No);
         }
 
         //spdbt-2629
@@ -92,16 +125,18 @@ internal partial class ApplicationRepository : IApplicationRepository
         {
             if (clearanceQry.IncludeServiceTypeEnum == ServiceTypeEnum.CRRP_EMPLOYEE || clearanceQry.IncludeServiceTypeEnum == ServiceTypeEnum.CRRP_VOLUNTEER)
             {
-                DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_VOLUNTEER.ToString(), out Guid volunteerGuid);
-                DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_EMPLOYEE.ToString(), out Guid employeeGuid);
-                clearances = clearances.Where(c => c._spd_servicetype_value == volunteerGuid || c._spd_servicetype_value == employeeGuid);
+                Spd.Utilities.Dataverse.DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_VOLUNTEER.ToString(), out Guid volunteerGuid);
+                Spd.Utilities.Dataverse.DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_EMPLOYEE.ToString(), out Guid employeeGuid);
+                clearances = clearances.Where(c =>
+                    c.Spd_ServiceType != null &&
+                    (c.Spd_ServiceType.Id == volunteerGuid || c.Spd_ServiceType.Id == employeeGuid));
             }
             else
             {
-                var keyExisted = DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(clearanceQry.IncludeServiceTypeEnum.ToString(), out Guid stGuid);
+                var keyExisted = Spd.Utilities.Dataverse.DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(clearanceQry.IncludeServiceTypeEnum.ToString(), out Guid stGuid);
                 if (!keyExisted)
                     throw new ArgumentException("invalid service type");
-                clearances = clearances.Where(c => c._spd_servicetype_value == stGuid);
+                clearances = clearances.Where(c => c.Spd_ServiceType != null && c.Spd_ServiceType.Id == stGuid);
             }
         }
 
@@ -109,65 +144,57 @@ internal partial class ApplicationRepository : IApplicationRepository
         {
             if (clearanceQry.IncludeWorkWith == EmployeeInteractionTypeCode.Children) //work with children
             {
-                int child = (int)Enum.Parse<WorksWithChildrenOptionSet>(EmployeeInteractionTypeCode.Children.ToString());
-                int childAdult = (int)Enum.Parse<WorksWithChildrenOptionSet>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
-                clearances = clearances.Where(c => c.spd_workswith == child || c.spd_workswith == childAdult);
+                Spd_OrganizationClientBase child = Enum.Parse<Spd_OrganizationClientBase>(EmployeeInteractionTypeCode.Children.ToString());
+                Spd_OrganizationClientBase childAdult = Enum.Parse<Spd_OrganizationClientBase>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
+                clearances = clearances.Where(c => c.Spd_WorksWith == child || c.Spd_WorksWith == childAdult);
             }
             else if (clearanceQry.IncludeWorkWith == EmployeeInteractionTypeCode.Adults) //work with adult
             {
-                int adult = (int)Enum.Parse<WorksWithChildrenOptionSet>(EmployeeInteractionTypeCode.Adults.ToString());
-                int childAdult = (int)Enum.Parse<WorksWithChildrenOptionSet>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
-                clearances = clearances.Where(c => c.spd_workswith == adult || c.spd_workswith == childAdult);
+                Spd_OrganizationClientBase adult = Enum.Parse<Spd_OrganizationClientBase>(EmployeeInteractionTypeCode.Adults.ToString());
+                Spd_OrganizationClientBase childAdult = Enum.Parse<Spd_OrganizationClientBase>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
+                clearances = clearances.Where(c => c.Spd_WorksWith == adult || c.Spd_WorksWith == childAdult);
             }
             else //work with children and adult
             {
-                int childAdult = (int)Enum.Parse<WorksWithChildrenOptionSet>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
-                clearances = clearances.Where(c => c.spd_workswith == childAdult);
+                Spd_OrganizationClientBase childAdult = Enum.Parse<Spd_OrganizationClientBase>(EmployeeInteractionTypeCode.ChildrenAndAdults.ToString());
+                clearances = clearances.Where(c => c.Spd_WorksWith == childAdult);
             }
         }
         //spd
 
-        resp.Clearances = _mapper.Map<IEnumerable<ClearanceResp>>(clearances);
+        List<Spd_Clearance> clearanceList = clearances.ToList();
+        foreach (Spd_Clearance clearance in clearanceList)
+        {
+            _context.LoadProperty(clearance, nameof(Spd_Clearance.Spd_Incident_Spd_Clearance));
+        }
+
+        resp.Clearances = clearanceList.Select(c => new ClearanceResp
+        {
+            OrgId = c.Spd_Incident_Spd_Clearance?.Spd_OrganizationId?.Id ?? Guid.Empty,
+            ApplicationId = c.Spd_Incident_Spd_Clearance?.Spd_ApplicationId?.Id ?? Guid.Empty,
+            GrantedDate = c.Spd_DateGranted,
+            ExpiryDate = c.Spd_ExpiryDate,
+            WorkWith = c.Spd_WorksWith == null ? null : Enum.Parse<EmployeeInteractionTypeCode>(c.Spd_WorksWith.ToString()),
+            ServiceType = Enum.Parse<ServiceTypeEnum>(Spd.Utilities.Dataverse.DataverseContextLookupHelpers.GetServiceTypeName(c.Spd_ServiceType?.Id)),
+            ClearanceId = c.Spd_ClearanceId ?? Guid.Empty,
+        });
+
         return resp;
     }
 
-    public async Task DeleteClearanceAccessAsync(ClearanceAccessDeleteCmd clearanceAccessDeleteCmd, CancellationToken cancellationToken)
+    public async System.Threading.Tasks.Task DeleteClearanceAccessAsync(ClearanceAccessDeleteCmd clearanceAccessDeleteCmd, CancellationToken cancellationToken)
     {
         var clearance = await GetClearanceAccessById(clearanceAccessDeleteCmd.ClearanceAccessId, clearanceAccessDeleteCmd.OrgId);
 
         if (clearance == null)
             throw new ApiException(HttpStatusCode.BadRequest, "Invalid OrgId or ClearanceAccessId");
 
-        clearance.statecode = DynamicsConstants.StateCode_Inactive;
-        clearance.statuscode = (int)ClearanceAccessStatusOptionSet.Revoked;
+        clearance.StateCode = Spd_ClearanceAccess_StateCode.Inactive;
+        clearance.StatusCode = Spd_ClearanceAccess_StatusCode.Revoked;
 
         _context.UpdateObject(clearance);
 
-        await _context.SaveChangesAsync(cancellationToken);
-    }
-
-    private string GetClearanceFilterString(ClearanceAccessFilterBy clearanceFilterBy)
-    {
-        ClearanceAccessStatusOptionSet status = Enum.Parse<ClearanceAccessStatusOptionSet>(clearanceFilterBy.ClearanceAccessStatus.ToString());
-        DateOnly currentDate = DateOnlyHelper.GetCurrentPCTDate();
-        string dateStr = currentDate.AddDays(90).ToString("yyyy-MM-dd");
-        string orgFilter = $"_spd_organizationid_value eq {clearanceFilterBy.OrgId}";
-        string statusFilter = $"statuscode eq {(int)status}";
-        string expireDateFilter = $"spd_expirydate le {dateStr}";
-
-        string? contains = null;
-        if (!string.IsNullOrWhiteSpace(clearanceFilterBy.NameOrEmailContains))
-        {
-            contains = $"(contains(spd_applicantfullname,'{clearanceFilterBy.NameOrEmailContains}') or contains(spd_emailaddress1,'{clearanceFilterBy.NameOrEmailContains}'))";
-        }
-        string result = $"{orgFilter}";
-        result += $" and {statusFilter}";
-        result += $" and {expireDateFilter}";
-        if (contains != null)
-        {
-            result += $" and {contains}";
-        }
-        return result;
+        _context.SaveChanges();
     }
 
     private string GetClearanceSortBy(ClearanceAccessSortBy? clearanceSortBy)
@@ -194,8 +221,9 @@ internal partial class ApplicationRepository : IApplicationRepository
         return "createdon desc";
     }
 
-    private async Task<spd_clearanceaccess?> GetClearanceAccessById(Guid clearanceAccessId, Guid organizationId)
-       => await _context.spd_clearanceaccesses
-            .Where(a => a.spd_clearanceaccessid == clearanceAccessId && a._spd_organizationid_value == organizationId).SingleOrDefaultAsync();
+    private async Task<Spd_ClearanceAccess?> GetClearanceAccessById(Guid clearanceAccessId, Guid organizationId)
+       => _context.Spd_ClearanceAccessSet
+            .Where(a => a.Spd_ClearanceAccessId == clearanceAccessId && a.Spd_OrganizationId != null && a.Spd_OrganizationId.Id == organizationId)
+            .SingleOrDefault();
 }
 

@@ -390,7 +390,7 @@ internal class ControllingMemberCrcAppManager :
                 Subject = $"Updating controlling member background information for {bizLicence.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingAccountId = bizContact.BizId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
                 LicenceId = bizLicence.LicenceId
             }, ct)).TaskId;
 

@@ -1,42 +1,42 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
 using Spd.Resource.Repository.Biz;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
+using Task = System.Threading.Tasks.Task;
 
 namespace Spd.Resource.Repository.Address;
 internal class AddressRepository : IAddressRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<BizRepository> _logger;
 
-    public AddressRepository(IDynamicsContextFactory ctx,
+    public AddressRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx,
             IMapper mapper,
             ILogger<BizRepository> logger)
     {
-        _context = ctx.CreateChangeOverwrite();
+        _context = ctx;
         _mapper = mapper;
         _logger = logger;
     }
 
     public async Task<IEnumerable<AddressResp>> QueryAsync(AddressQry qry, CancellationToken ct)
     {
-        IQueryable<spd_address> addresses = _context.spd_addresses;
+        IQueryable<Spd_Address> addresses = _context.Spd_AddressSet;
 
         if (qry.OrganizationId == null && qry.Type == null)
             throw new ArgumentException("at least need 1 parameter to do address query.");
 
         if (!qry.IncludeInactive)
-            addresses = addresses.Where(a => a.statecode != DynamicsConstants.StateCode_Inactive);
+            addresses = addresses.Where(a => a.StateCode != Spd_Address_StateCode.Inactive);
 
         if (qry.OrganizationId != null)
-            addresses = addresses.Where(a => a._spd_organization_value == qry.OrganizationId);
+            addresses = addresses.Where(a => a.Spd_Organization != null && a.Spd_Organization.Id == qry.OrganizationId);
 
         if (qry.Type != null)
-            addresses = addresses.Where(a => a.spd_type == (int)Enum.Parse<AddressTypeOptionSet>(qry.Type.ToString()));
+            addresses = addresses.Where(a => a.Spd_Type == Enum.Parse<Spd_AddressType>(qry.Type.ToString()));
 
-        return _mapper.Map<IEnumerable<AddressResp>>(addresses);
+        return await Task.FromResult(_mapper.Map<IEnumerable<AddressResp>>(addresses.ToList()));
     }
 
     public async Task<IEnumerable<AddressResp>> CreateAddressesAsync(UpsertAddressCmd cmd, CancellationToken ct)
@@ -45,72 +45,74 @@ internal class AddressRepository : IAddressRepository
 
         foreach (BranchAddr address in cmd.Addresses)
         {
-            spd_address addressToCreate = _mapper.Map<spd_address>(address);
-            IQueryable<account> accounts = _context.accounts.Where(a => a.accountid == cmd.BizId && a.statecode != DynamicsConstants.StateCode_Inactive);
-            account? biz = await accounts.FirstOrDefaultAsync(ct);
+            Spd_Address addressToCreate = _mapper.Map<Spd_Address>(address);
+            Account? biz = _context.AccountSet.Where(a => a.AccountId == cmd.BizId && a.StateCode != Account_StateCode.Inactive).FirstOrDefault();
 
             if (biz == null)
             {
-                _logger.LogError($"Biz to be linked to address was not found");
+                _logger.LogError("Biz to be linked to address was not found");
                 throw new ArgumentException("cannot find biz to be linked");
             }
 
             CreateAddress(biz, addressToCreate);
-            await _context.SaveChangesAsync(ct);
-            AddressResp createdAddress = _mapper.Map<AddressResp>(address);
+            _context.SaveChanges();
+            AddressResp createdAddress = _mapper.Map<AddressResp>(addressToCreate);
             createdAddresses.Add(createdAddress);
         }
 
-        return createdAddresses;
+        return await Task.FromResult(createdAddresses.AsEnumerable());
     }
 
     public async Task DeleteAddressesAsync(List<Guid?> addressIds, CancellationToken ct)
     {
         foreach (var addressId in addressIds)
         {
-            spd_address? address = _context.spd_addresses.Where(a =>
-                a.spd_addressid == addressId &&
-                a.statecode == DynamicsConstants.StateCode_Active
+            Spd_Address? address = _context.Spd_AddressSet.Where(a =>
+                a.Spd_AddressId == addressId &&
+                a.StateCode == Spd_Address_StateCode.Active
             ).FirstOrDefault();
 
             if (address == null)
             {
-                _logger.LogError($"Address to be deleted was not found");
+                _logger.LogError("Address to be deleted was not found");
                 throw new ArgumentException("cannot find address to be deleted");
             }
 
-            address.statecode = DynamicsConstants.StateCode_Inactive;
-            address.statuscode = DynamicsConstants.StatusCode_Inactive;
+            address.StateCode = Spd_Address_StateCode.Inactive;
+            address.StatusCode = Spd_Address_StatusCode.Inactive;
             _context.UpdateObject(address);
         }
 
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
+        await Task.CompletedTask;
     }
 
     public async Task UpdateAddressesAsync(UpsertAddressCmd cmd, CancellationToken ct)
     {
         foreach (BranchAddr address in cmd.Addresses)
         {
-            spd_address? existingAddress = _context.spd_addresses.Where(a =>
-                a.spd_addressid == address.BranchId &&
-                a.statecode == DynamicsConstants.StateCode_Active
+            Spd_Address? existingAddress = _context.Spd_AddressSet.Where(a =>
+                a.Spd_AddressId == address.BranchId &&
+                a.StateCode == Spd_Address_StateCode.Active
             ).FirstOrDefault();
 
             if (existingAddress == null)
             {
-                _logger.LogError($"Address to be updated was not found");
+                _logger.LogError("Address to be updated was not found");
                 throw new ArgumentException("cannot find address to be updated");
             }
 
             _mapper.Map(address, existingAddress);
             _context.UpdateObject(existingAddress);
         }
-        await _context.SaveChangesAsync(ct);
+
+        _context.SaveChanges();
+        await Task.CompletedTask;
     }
 
-    private void CreateAddress(account account, spd_address address)
+    private void CreateAddress(Account account, Spd_Address address)
     {
-        _context.AddTospd_addresses(address);
-        _context.SetLink(address, nameof(address.spd_Organization), account);
+        address.Spd_Organization = account.ToEntityReference();
+        _context.AddObject(address);
     }
 }

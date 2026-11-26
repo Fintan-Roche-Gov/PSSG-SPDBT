@@ -1,15 +1,16 @@
 using AutoMapper;
 using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.OData.Client;
+using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 
 namespace Spd.Resource.Repository.Licence;
 internal class LicenceRepository : ILicenceRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly DataverseContext _context;
     private readonly IMapper _mapper;
-    public LicenceRepository(IDynamicsContextFactory ctx,
+    public LicenceRepository(IDataverseContextFactory ctx,
         IMapper mapper)
     {
         _context = ctx.Create();
@@ -75,7 +76,7 @@ internal class LicenceRepository : ILicenceRepository
             .Expand(i => i.spd_CaseId);
 
         if (!qry.IncludeInactive)
-            lics = lics.Where(d => d.statecode != DynamicsConstants.StateCode_Inactive);
+            lics = lics.Where(d => d.statecode != DataverseConstants.StateCode_Inactive);
 
         if (qry.IncludeInactive)
             lics = lics.Where(d => d.statuscode != (int)LicenceStatusOptionSet.Inactive);
@@ -98,7 +99,7 @@ internal class LicenceRepository : ILicenceRepository
         }
         if (qry.Type != null)
         {
-            Guid? serviceTypeId = DynamicsContextLookupHelpers.GetServiceTypeGuid(qry.Type.ToString());
+            Guid? serviceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(qry.Type.ToString());
             lics = lics.Where(l => l._spd_licencetype_value == serviceTypeId);
         }
         if (qry.IsExpired != null)
@@ -117,8 +118,8 @@ internal class LicenceRepository : ILicenceRepository
         var result = lics.ToList();
         if (qry.AccessCode != null)
         {
-            Guid? mdraServiceTypeId = DynamicsContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.MDRA.ToString());
-            Guid? bizServiceTypeId = DynamicsContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.SecurityBusinessLicence.ToString());
+            Guid? mdraServiceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.MDRA.ToString());
+            Guid? bizServiceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.SecurityBusinessLicence.ToString());
             result = result.Where(r =>
                 (r._spd_licencetype_value == mdraServiceTypeId && r.spd_LicenceHolder_account?.spd_accesscode == qry.AccessCode)
                 || (r._spd_licencetype_value == bizServiceTypeId && r.spd_LicenceHolder_account?.spd_accesscode == qry.AccessCode)

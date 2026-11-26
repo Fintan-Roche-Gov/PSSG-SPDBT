@@ -1,58 +1,60 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.Extensions.Caching.Distributed;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 
 namespace Spd.Resource.Repository.LicenceFee;
 
-internal class LicenceFeeRepository(IDynamicsContextFactory contextFactory, IMapper mapper, IDistributedCache cache) : ILicenceFeeRepository
+internal class LicenceFeeRepository : ILicenceFeeRepository
 {
-    private readonly DynamicsContext context = contextFactory.Create();
+    private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
+    private readonly IMapper _mapper;
+
+    public LicenceFeeRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext context, IMapper mapper)
+    {
+        _context = context;
+        _mapper = mapper;
+    }
 
     public async Task<LicenceFeeListResp> QueryAsync(LicenceFeeQry qry, CancellationToken cancellationToken)
     {
-        IEnumerable<spd_licencefee> feeResult = await cache.GetAsync(
-            "license-fees",
-            async ct => (await context.spd_licencefees.Expand(a => a.spd_ServiceTypeId).GetAllPagesAsync(ct)).ToList(),
-            TimeSpan.FromMinutes(60),
-            cancellationToken) ?? [];
+        IEnumerable<Spd_LicenceFee> feeResult = _context.Spd_LicenceFeeSet.ToList();
 
         if (!qry.IncludeInactive)
-            feeResult = feeResult.Where(d => d.statecode != DynamicsConstants.StateCode_Inactive);
+            feeResult = feeResult.Where(d => d.StateCode != Spd_LicenceFee_StateCode.Inactive);
 
         if (qry.ServiceTypeEnum != null)
         {
-            DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(qry.ServiceTypeEnum.ToString()!, out Guid stGuid);
-            feeResult = feeResult.Where(f => f._spd_servicetypeid_value == stGuid);
+            DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(qry.ServiceTypeEnum.ToString()!, out Guid stGuid);
+            feeResult = feeResult.Where(f => f.Spd_ServiceTypeId != null && f.Spd_ServiceTypeId.Id == stGuid);
         }
 
         if (qry.LicenceTermEnum != null)
         {
-            int term = (int)Enum.Parse<LicenceTermOptionSet>(qry.LicenceTermEnum.ToString()!);
-            feeResult = feeResult.Where(f => f.spd_term == term);
+            Spd_LicenceTerm term = Enum.Parse<Spd_LicenceTerm>(qry.LicenceTermEnum.ToString()!);
+            feeResult = feeResult.Where(f => f.Spd_Term == term);
         }
 
         if (qry.ApplicationTypeEnum != null)
         {
-            int type = (int)Enum.Parse<LicenceApplicationTypeOptionSet>(qry.ApplicationTypeEnum.ToString()!);
-            feeResult = feeResult.Where(f => f.spd_type == type);
+            Spd_LicenceApplicationType type = Enum.Parse<Spd_LicenceApplicationType>(qry.ApplicationTypeEnum.ToString()!);
+            feeResult = feeResult.Where(f => f.Spd_Type == type);
         }
 
         if (qry.BizTypeEnum != null)
         {
-            int bizType = (int)Enum.Parse<BizTypeOptionSet>(qry.BizTypeEnum.ToString()!);
-            feeResult = feeResult.Where(f => f.spd_businesstype == bizType);
+            Spd_BusinessType bizType = Enum.Parse<Spd_BusinessType>(qry.BizTypeEnum.ToString()!);
+            feeResult = feeResult.Where(f => f.Spd_BusinessType == bizType);
         }
 
         if (qry.HasValidSwl90DayLicence != null)
         {
-            int hasValidSwl90Day = (int)SharedMappingFuncs.GetYesNo(qry.HasValidSwl90DayLicence!)!;
-            feeResult = feeResult.Where(f => f.spd_hasvalidswl90daylicence == hasValidSwl90Day);
+            Spd_YesNo hasValidSwl90Day = qry.HasValidSwl90DayLicence.Value ? Spd_YesNo.Yes : Spd_YesNo.No;
+            feeResult = feeResult.Where(f => f.Spd_HasValidSwL90DayLicence == hasValidSwl90Day);
         }
 
         return new LicenceFeeListResp
         {
-            LicenceFees = mapper.Map<IEnumerable<LicenceFeeResp>>(feeResult.ToList())
+            LicenceFees = _mapper.Map<IEnumerable<LicenceFeeResp>>(feeResult.ToList())
         };
     }
 }

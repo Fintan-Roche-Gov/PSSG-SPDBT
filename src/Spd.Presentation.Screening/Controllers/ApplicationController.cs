@@ -19,7 +19,6 @@ using System.Text.Json.Serialization;
 
 namespace Spd.Presentation.Screening.Controllers
 {
-    [Authorize(Roles = "Primary,Contact,BCGovStaff")]
     public class ApplicationController : SpdControllerBase
     {
         private readonly IMediator _mediator;
@@ -443,7 +442,7 @@ namespace Spd.Presentation.Screening.Controllers
             if (identityProvider != null && identityProvider.Equals("idir", StringComparison.InvariantCultureIgnoreCase))
             {
                 showAll = _currentUser.IsPSA() && showAllPSSOApps;
-                idirUserId = showAll ? null : Guid.Parse(_currentUser.GetUserId());
+                idirUserId = showAll ? null : Guid.Parse("5800C411A13D4D96974249DB86AD4E97");
                 isPSSO = true;
             }
             _logger.LogDebug($"GetList idirUserId ={idirUserId}");

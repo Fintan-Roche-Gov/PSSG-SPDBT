@@ -2,14 +2,14 @@ using AutoMapper;
 using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.OData.Client;
 using Spd.Resource.Repository.DogBase;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
-
 namespace Spd.Resource.Repository.RetiredDogApp;
 internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRepository
 {
-    public RetiredDogAppRepository(IDynamicsContextFactory ctx, IMapper mapper) : base(ctx, mapper)
+    public RetiredDogAppRepository(IDataverseContextFactory ctx, IMapper mapper) : base(ctx, mapper)
     {
     }
 
@@ -20,12 +20,12 @@ internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRep
         if (cmd.ApplicationTypeCode == ApplicationTypeEnum.New)
         {
             contact = _mapper.Map<contact>(cmd);
-            contact = await _context.CreateContact(contact, null, null, ct);
+            _context.AddTocontacts(contact);
             app = _mapper.Map<spd_application>(cmd);
             app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
             _context.AddTospd_applications(app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
-            SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+            SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
             _context.SetLink(app, nameof(app.spd_ApplicantId_contact), contact);
         }
         else if (cmd.ApplicationTypeCode == ApplicationTypeEnum.Renewal || cmd.ApplicationTypeCode == ApplicationTypeEnum.Replacement)
@@ -39,7 +39,7 @@ internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRep
             }
             SharedRepositoryFuncs.LinkLicence(_context, cmd.OriginalLicenceId, app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
-            SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+            SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
             SharedRepositoryFuncs.LinkDog(_context, cmd.DogId, app);
         }
         await _context.SaveChangesAsync(ct);
@@ -64,7 +64,7 @@ internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRep
             _mapper.Map<SaveRetiredDogAppCmd, spd_application>(cmd, app);
             _context.UpdateObject(app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
-            SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+            SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
             await _context.SaveChangesAsync(ct);
         }
         else
@@ -91,11 +91,11 @@ internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRep
         spd_application? app;
         try
         {
-            app = await _context.spd_applications
+            app = _context.spd_applications
                 .Expand(a => a.spd_ServiceTypeId)
                 .Expand(a => a.spd_ApplicantId_contact)
                 .Where(a => a.spd_applicationid == licenceApplicationId)
-                .FirstOrDefaultAsync(ct);
+                .FirstOrDefault();
         }
         catch (DataServiceQueryException ex)
         {
@@ -119,7 +119,7 @@ internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRep
         app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
         _context.AddTospd_applications(app);
         SharedRepositoryFuncs.LinkServiceType(_context, appData.ServiceTypeCode, app);
-        SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+        SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 

@@ -38,7 +38,7 @@ public class DynamicsTestData
     {
         var existing = _context.accounts
             .Where(a => a.spd_organizationlegalname == $"{testPrefix}{orgName}")
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else
@@ -72,7 +72,7 @@ public class DynamicsTestData
     {
         var existing = _context.spd_portalinvitations
             .Where(a => a.spd_surname == surname && a.spd_firstname == givenName && a._spd_organizationid_value == org.accountid)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else
@@ -100,7 +100,7 @@ public class DynamicsTestData
         var existing = _context.spd_portalusers
             .Where(a => a.spd_surname == surname && a.spd_firstname == givenName && a._spd_organizationid_value == org.accountid)
             .Where(a => a._spd_identityid_value == identity.spd_identityid)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else
@@ -154,7 +154,7 @@ public class DynamicsTestData
     {
         var existing = _context.spd_identities
             .Where(a => a.spd_userguid == userGuid && a.spd_orgguid == orgGuid)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else
@@ -181,7 +181,7 @@ public class DynamicsTestData
             spd_firstname = givenName,
             spd_lastname = surname,
             spd_dateofbirth = new Microsoft.OData.Edm.Date(birthdate.Year, birthdate.Month, birthdate.Day),
-            statecode = DynamicsConstants.StatusCode_Active,
+            statecode = DataverseConstants.StatusCode_Active,
             spd_emailaddress1 = $"{testPrefix}{givenName}.{surname}@test.gov.bc.ca"
         };
         _context.AddTospd_applications(newOne);
@@ -194,7 +194,7 @@ public class DynamicsTestData
     {
         var existing = _context.spd_orgregistrations
             .Where(a => a.spd_organizationname == orgName)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else
@@ -260,7 +260,7 @@ public class DynamicsTestData
             spd_firstname = $"{testPrefix}appfirstname",
             spd_lastname = $"{testPrefix}applastname",
             spd_dateofbirth = new Microsoft.OData.Edm.Date(2000, 1, 1),
-            statecode = DynamicsConstants.StatusCode_Active,
+            statecode = DataverseConstants.StatusCode_Active,
             spd_emailaddress1 = $"{testPrefix}{contact.firstname}.{contact.lastname}@test.gov.bc.ca",
         };
         _context.AddTospd_applications(newOne);

@@ -40,8 +40,8 @@ namespace Spd.Resource.Repository.Org
             .ForMember(d => d.ServiceTypes, opt => opt.MapFrom(s => GetServiceTypeEnums(s.spd_account_spd_servicetype)))
             .ForMember(d => d.AccessCode, opt => opt.MapFrom(s => s.spd_accesscode))
             .ForMember(d => d.HasInvoiceSupport, opt => opt.MapFrom(s => s.spd_eligibleforcreditpayment != null && s.spd_eligibleforcreditpayment == (int)YesNoOptionSet.Yes))
-            .ForMember(d => d.EmployeeOrganizationTypeCode, opt => opt.MapFrom(s => DynamicsContextLookupHelpers.GetTypeFromTypeId(s._spd_organizationtypeid_value).Item1))
-            .ForMember(d => d.VolunteerOrganizationTypeCode, opt => opt.MapFrom(s => DynamicsContextLookupHelpers.GetTypeFromTypeId(s._spd_organizationtypeid_value).Item2));
+            .ForMember(d => d.EmployeeOrganizationTypeCode, opt => opt.MapFrom(s => DataverseContextLookupHelpers.GetTypeFromTypeId(s._spd_organizationtypeid_value).Item1))
+            .ForMember(d => d.VolunteerOrganizationTypeCode, opt => opt.MapFrom(s => DataverseContextLookupHelpers.GetTypeFromTypeId(s._spd_organizationtypeid_value).Item2));
         }
 
         private static int? GetLicenseesNeedVulnerableSectorScreening(BooleanTypeCode? code)
@@ -78,7 +78,7 @@ namespace Spd.Resource.Repository.Org
 
         private static IEnumerable<ServiceTypeEnum>? GetServiceTypeEnums(IEnumerable<spd_servicetype> servicetypes)
         {
-            return servicetypes.Select(s => Enum.Parse<ServiceTypeEnum>(DynamicsContextLookupHelpers.GetServiceTypeName(s.spd_servicetypeid))).ToArray();
+            return servicetypes.Select(s => Enum.Parse<ServiceTypeEnum>(DataverseContextLookupHelpers.GetServiceTypeName(s.spd_servicetypeid))).ToArray();
         }
     }
 }

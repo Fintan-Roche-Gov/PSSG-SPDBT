@@ -1,16 +1,18 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
-using Spd.Utilities.Dynamics;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Collections.Immutable;
 using System.Net;
+using Task = System.Threading.Tasks.Task;
 
 namespace Spd.Resource.Repository.Biz
 {
     internal class BizRepository : IBizRepository
     {
-        private readonly DynamicsContext _context;
+        private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
         private readonly IMapper _mapper;
         private readonly ILogger<BizRepository> _logger;
         private readonly List<BizTypeEnum> soleProprietorTypes = new()
@@ -19,63 +21,78 @@ namespace Spd.Resource.Repository.Biz
             BizTypeEnum.NonRegisteredSoleProprietor
         };
 
-        public BizRepository(IDynamicsContextFactory ctx,
+        public BizRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx,
             IMapper mapper,
             ILogger<BizRepository> logger)
         {
-            _context = ctx.CreateChangeOverwrite();
+            _context = ctx;
             _mapper = mapper;
             _logger = logger;
         }
 
         public async Task<IEnumerable<BizResult>> QueryBizAsync(BizsQry qry, CancellationToken ct)
         {
-            IQueryable<account> accounts = _context.accounts.Expand(a => a.spd_account_spd_servicetype);
+            IQueryable<Account> accounts = _context.AccountSet;
+
             if (!qry.IncludeInactive)
-                accounts = accounts.Where(a => a.statecode != DynamicsConstants.StateCode_Inactive);
-            if (qry.BizGuid != null)
-                accounts = accounts.Where(a => a.spd_orgguid == qry.BizGuid.ToString());
-            if (qry.BizCode != null)
-                accounts = accounts.Where(a => a.spd_orgcode == qry.BizCode);
-            if (qry.ServiceTypes != null && qry.ServiceTypes.Any())
             {
-                IEnumerable<Guid> stIds = qry.ServiceTypes.Select(t => DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.GetValueOrDefault(t.ToString()));
-                var accountsList = accounts
-                    .AsEnumerable()
-                    .Where(a => stIds.Any(t => a.spd_account_spd_servicetype.Any(st => st.spd_servicetypeid == t)));
-                return _mapper.Map<IEnumerable<BizResult>>(accountsList);
+                accounts = accounts.Where(a => a.StateCode != Account_StateCode.Inactive);
             }
 
-            return _mapper.Map<IEnumerable<BizResult>>(accounts.ToList());
+            if (qry.BizGuid != null)
+            {
+                accounts = accounts.Where(a => a.Spd_OrgGuid == qry.BizGuid.ToString());
+            }
+
+            if (qry.BizCode != null)
+            {
+                accounts = accounts.Where(a => a.Spd_OrgCode == qry.BizCode);
+            }
+
+            var accountList = accounts.ToList();
+
+            if (qry.ServiceTypes != null && qry.ServiceTypes.Any())
+            {
+                IEnumerable<Guid> stIds = qry.ServiceTypes
+                    .Select(t => DataverseContextLookupHelpers.ServiceTypeGuidDictionary.GetValueOrDefault(t.ToString()))
+                    .Where(g => g != Guid.Empty);
+
+                accountList = accountList.Where(a =>
+                {
+                    _context.LoadProperty(a, nameof(Account.Spd_Account_Spd_ServiceType));
+                    return stIds.Any(t => a.Spd_Account_Spd_ServiceType.Any(st => st.Spd_ServiceTypeId == t));
+                }).ToList();
+            }
+
+            return await Task.FromResult(_mapper.Map<IEnumerable<BizResult>>(accountList));
         }
 
         public async Task<BizResult?> GetBizAsync(Guid accountId, CancellationToken ct, bool includeMainOffice = false)
         {
-            IQueryable<account> accounts = _context.accounts
-                .Expand(a => a.spd_Organization_Addresses)
-                .Expand(a => a.spd_organization_spd_licence_soleproprietor)
-                .Expand(a => a.spd_account_spd_servicetype)
-                .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
-                .Where(a => a.accountid == accountId);
-
-            account? biz = await accounts.FirstOrDefaultAsync(ct);
+            Account? biz = _context.AccountSet
+                .Where(a => a.StateCode != Account_StateCode.Inactive)
+                .Where(a => a.AccountId == accountId)
+                .FirstOrDefault();
 
             if (biz == null) throw new ApiException(HttpStatusCode.NotFound);
 
-            spd_licence? swl = biz.spd_organization_spd_licence_soleproprietor
-              .Where(a => a.statecode == DynamicsConstants.StateCode_Active)
-              .OrderByDescending(a => a.createdon)
-              .FirstOrDefault();
+            _context.LoadProperty(biz, nameof(Account.Spd_Organization_Addresses));
+            _context.LoadProperty(biz, nameof(Account.Spd_Organization_Spd_Licence_SoleProprietor));
+            _context.LoadProperty(biz, nameof(Account.Spd_Account_Spd_ServiceType));
 
-            //spdbt-3952: portal do not want main office, bcmp printing want mainOffice
+            Spd_Licence? swl = biz.Spd_Organization_Spd_Licence_SoleProprietor
+                .Where(a => a.StateCode == Spd_Licence_StateCode.Active)
+                .OrderByDescending(a => a.CreatedOn)
+                .FirstOrDefault();
+
             var response = _mapper.Map<BizResult>(biz, opt =>
             {
                 opt.Items["includeMainOffice"] = includeMainOffice;
             });
 
-            response.SoleProprietorSwlContactInfo.LicenceId = swl?.spd_licenceid;
-            response.SoleProprietorSwlExpiryDate = SharedMappingFuncs.GetDateOnlyFromDateTimeOffset(swl?.spd_expirydate);
-            return response;
+            response.SoleProprietorSwlContactInfo.LicenceId = swl?.Spd_LicenceId;
+            response.SoleProprietorSwlExpiryDate = SharedMappingFuncs.GetDateOnlyFromDateTimeOffset(swl?.Spd_ExpiryDate);
+            return await Task.FromResult(response);
         }
 
         public async Task<BizResult?> ManageBizAsync(BizCmd cmd, CancellationToken ct)
@@ -93,15 +110,15 @@ namespace Spd.Resource.Repository.Biz
 
         private async Task<BizResult?> UpdateBizAsync(UpdateBizCmd updateBizCmd, CancellationToken ct)
         {
-            IQueryable<account> accounts = _context.accounts
-                .Expand(a => a.spd_Organization_Addresses)
-                .Expand(a => a.spd_organization_spd_licence_soleproprietor)
-                .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
-                .Where(a => a.accountid == updateBizCmd.Id);
-
-            account? biz = await accounts.FirstOrDefaultAsync(ct);
+            Account? biz = _context.AccountSet
+                .Where(a => a.StateCode != Account_StateCode.Inactive)
+                .Where(a => a.AccountId == updateBizCmd.Id)
+                .FirstOrDefault();
 
             if (biz == null) throw new ApiException(HttpStatusCode.NotFound);
+
+            _context.LoadProperty(biz, nameof(Account.Spd_Organization_Addresses));
+            _context.LoadProperty(biz, nameof(Account.Spd_Organization_Spd_Licence_SoleProprietor));
 
             _mapper.Map(updateBizCmd, biz);
 
@@ -111,148 +128,187 @@ namespace Spd.Resource.Repository.Biz
                 UpdateSPLicenceLink(biz, updateBizCmd.SoleProprietorSwlContactInfo?.LicenceId, updateBizCmd.BizType);
                 await UpdateSPBizContact(biz, updateBizCmd.SoleProprietorSwlContactInfo?.LicenceId, ct);
             }
-            await _context.SaveChangesAsync(ct);
 
-            return _mapper.Map<BizResult>(biz);
+            _context.SaveChanges();
+            return await Task.FromResult(_mapper.Map<BizResult>(biz));
         }
 
         private async Task<BizResult?> UpdateBizServiceTypeAsync(UpdateBizServiceTypeCmd updateBizServiceTypeCmd, CancellationToken ct)
         {
-            spd_servicetype? st = _context.LookupServiceType(updateBizServiceTypeCmd.ServiceTypeEnum.ToString());
-            IQueryable<account> accounts = _context.accounts
-                .Expand(a => a.spd_account_spd_servicetype)
-                .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
-                .Where(a => a.accountid == updateBizServiceTypeCmd.BizId);
-            account? biz = await accounts.FirstOrDefaultAsync(ct);
+            var serviceTypeGuid = DataverseContextLookupHelpers.GetServiceTypeGuid(updateBizServiceTypeCmd.ServiceTypeEnum.ToString());
+            if (serviceTypeGuid == null)
+            {
+                throw new ApiException(HttpStatusCode.BadRequest, "cannot find the service type");
+            }
+
+            Spd_ServiceType? st = _context.Spd_ServiceTypeSet
+                .Where(s => s.Spd_ServiceTypeId == serviceTypeGuid)
+                .FirstOrDefault();
+
+            Account? biz = _context.AccountSet
+                .Where(a => a.StateCode != Account_StateCode.Inactive)
+                .Where(a => a.AccountId == updateBizServiceTypeCmd.BizId)
+                .FirstOrDefault();
 
             if (biz == null)
                 throw new ApiException(HttpStatusCode.BadRequest, "cannot find the biz");
 
-            if (!biz.spd_account_spd_servicetype.Any(s => s.spd_servicetypeid == st.spd_servicetypeid))
-                _context.AddLink(biz, nameof(biz.spd_account_spd_servicetype), st);
+            _context.LoadProperty(biz, nameof(Account.Spd_Account_Spd_ServiceType));
 
-            foreach (spd_servicetype serviceType in biz.spd_account_spd_servicetype)
+            if (st != null && !biz.Spd_Account_Spd_ServiceType.Any(s => s.Spd_ServiceTypeId == st.Spd_ServiceTypeId))
             {
-                var serviceTypeCode = DynamicsContextLookupHelpers.GetServiceTypeName(serviceType.spd_servicetypeid);
-                if (updateBizServiceTypeCmd.ServiceTypeEnum.ToString() != serviceTypeCode)
-                    _context.DeleteLink(biz, nameof(biz.spd_account_spd_servicetype), serviceType);
+                _context.AddLink(biz, new Relationship("spd_account_spd_servicetype"), st);
             }
 
-            await _context.SaveChangesAsync(ct);
+            foreach (Spd_ServiceType serviceType in biz.Spd_Account_Spd_ServiceType)
+            {
+                var serviceTypeCode = DataverseContextLookupHelpers.GetServiceTypeName(serviceType.Spd_ServiceTypeId);
+                if (updateBizServiceTypeCmd.ServiceTypeEnum.ToString() != serviceTypeCode)
+                {
+                    _context.DeleteLink(biz, new Relationship("spd_account_spd_servicetype"), serviceType);
+                }
+            }
+
+            _context.SaveChanges();
             return await GetBizAsync(updateBizServiceTypeCmd.BizId, ct);
         }
 
         private async Task<BizResult?> CreateBizAsync(CreateBizCmd createBizCmd, CancellationToken ct)
         {
-            var account = _mapper.Map<account>(createBizCmd);
-            _context.AddToaccounts(account);
+            var account = _mapper.Map<Account>(createBizCmd);
+            _context.AddObject(account);
 
             foreach (ServiceTypeEnum serviceType in createBizCmd.ServiceTypes)
             {
-                spd_servicetype? st = _context.LookupServiceType(serviceType.ToString());
-                _context.AddLink(account, nameof(account.spd_account_spd_servicetype), st);
+                var serviceTypeGuid = DataverseContextLookupHelpers.GetServiceTypeGuid(serviceType.ToString());
+                if (serviceTypeGuid == null)
+                {
+                    continue;
+                }
+
+                Spd_ServiceType? st = _context.Spd_ServiceTypeSet
+                    .Where(s => s.Spd_ServiceTypeId == serviceTypeGuid)
+                    .FirstOrDefault();
+
+                if (st != null)
+                {
+                    _context.AddLink(account, new Relationship("spd_account_spd_servicetype"), st);
+                }
             }
 
-            await _context.SaveChangesAsync(ct);
-
-            return _mapper.Map<BizResult>(account);
+            _context.SaveChanges();
+            return await Task.FromResult(_mapper.Map<BizResult>(account));
         }
 
         private async Task<BizResult?> MergeBizAsync(MergeBizsCmd mergeBizCmd, CancellationToken ct)
         {
-            account? oldBiz = await _context.GetOrgById(mergeBizCmd.OldBizId, ct);
-            account? newBiz = await _context.GetOrgById(mergeBizCmd.NewBizId, ct);
-            if (oldBiz == null || newBiz == null)
-            {
-                _logger.LogError($"Merge bizs cannot find at least one of the bizs");
-                throw new ArgumentException("cannot find business for merging");
-            }
-
-            var result = await _context.spd_MergeOrgs(oldBiz, newBiz).GetValueAsync(ct);
-            await _context.SaveChangesAsync(ct);
-            if (result.IsSuccess == null || !(result.IsSuccess.Value))
-            {
-                _logger.LogError($"Merge bizs failed for merging oldBiz {mergeBizCmd.OldBizId} to newContact {mergeBizCmd.NewBizId}");
-                throw new ApiException(System.Net.HttpStatusCode.InternalServerError, "merge accounts failed.");
-            }
-            return null;
+            _logger.LogError("MergeBizAsync is not yet implemented for EarlyBound DataverseContext in BizRepository.");
+            throw new NotSupportedException("MergeBizAsync is not implemented for EarlyBound DataverseContext.");
         }
 
         private async Task<BizResult?> AddBizServiceTypeAsync(AddBizServiceTypeCmd addBizServiceTypeCmd, CancellationToken ct)
         {
-            spd_servicetype? st = _context.LookupServiceType(addBizServiceTypeCmd.ServiceTypeEnum.ToString());
-            IQueryable<account> accounts = _context.accounts
-                .Expand(a => a.spd_account_spd_servicetype)
-                .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
-                .Where(a => a.accountid == addBizServiceTypeCmd.BizId);
-            account? biz = await accounts.FirstOrDefaultAsync(ct);
+            var serviceTypeGuid = DataverseContextLookupHelpers.GetServiceTypeGuid(addBizServiceTypeCmd.ServiceTypeEnum.ToString());
+            if (serviceTypeGuid == null)
+            {
+                throw new ApiException(HttpStatusCode.BadRequest, "cannot find the service type");
+            }
+
+            Spd_ServiceType? st = _context.Spd_ServiceTypeSet
+                .Where(s => s.Spd_ServiceTypeId == serviceTypeGuid)
+                .FirstOrDefault();
+
+            Account? biz = _context.AccountSet
+                .Where(a => a.StateCode != Account_StateCode.Inactive)
+                .Where(a => a.AccountId == addBizServiceTypeCmd.BizId)
+                .FirstOrDefault();
+
             if (biz == null)
                 throw new ApiException(HttpStatusCode.BadRequest, "cannot find the biz");
-            if (!biz.spd_account_spd_servicetype.Any(s => s.spd_servicetypeid == st.spd_servicetypeid))
+
+            _context.LoadProperty(biz, nameof(Account.Spd_Account_Spd_ServiceType));
+
+            if (st != null && !biz.Spd_Account_Spd_ServiceType.Any(s => s.Spd_ServiceTypeId == st.Spd_ServiceTypeId))
             {
-                _context.AddLink(biz, nameof(biz.spd_account_spd_servicetype), st);
-                await _context.SaveChangesAsync(ct);
+                _context.AddLink(biz, new Relationship("spd_account_spd_servicetype"), st);
+                _context.SaveChanges();
             }
+
             return await GetBizAsync(addBizServiceTypeCmd.BizId, ct);
         }
 
-        private void UpdateSPLicenceLink(account account, Guid? licenceId, BizTypeEnum? bizType)
+        private void UpdateSPLicenceLink(Account account, Guid? licenceId, BizTypeEnum? bizType)
         {
-            spd_licence? existingLicence = account.spd_organization_spd_licence_soleproprietor
-                .FirstOrDefault(a => a.statecode == DynamicsConstants.StateCode_Active);
+            Spd_Licence? existingLicence = account.Spd_Organization_Spd_Licence_SoleProprietor
+                .FirstOrDefault(a => a.StateCode == Spd_Licence_StateCode.Active);
 
-            if (existingLicence != null && existingLicence.spd_licenceid == licenceId && IsSoleProprietor(bizType))
+            if (existingLicence != null && existingLicence.Spd_LicenceId == licenceId && IsSoleProprietor(bizType))
                 return;
-            if (!IsSoleProprietor(bizType) && IsSoleProprietor(SharedMappingFuncs.GetBizTypeEnum(account.spd_licensingbusinesstype)))
+            if (!IsSoleProprietor(bizType) && IsSoleProprietor(SharedMappingFuncs.GetBizTypeEnum((int?)account.Spd_LicensingBusinessType)))
                 throw new ApiException(HttpStatusCode.BadRequest, "Biz type can only be changed from sole proprietor to non-sole proprietor");
             if (!IsSoleProprietor(bizType))
                 return;
 
-            // Remove link with current licence
             if (existingLicence != null)
             {
-                _context.DeleteLink(account, nameof(account.spd_organization_spd_licence_soleproprietor), existingLicence);
+                _context.DeleteLink(account, new Relationship("spd_organization_spd_licence_soleproprietor"), existingLicence);
             }
-            // Add link with new licence
-            spd_licence? newLicence = _context.spd_licences
-                .Where(l => l.spd_licenceid == licenceId)
-                .Where(l => l.statecode == DynamicsConstants.StateCode_Active)
+
+            Spd_Licence? newLicence = _context.Spd_LicenceSet
+                .Where(l => l.Spd_LicenceId == licenceId)
+                .Where(l => l.StateCode == Spd_Licence_StateCode.Active)
                 .FirstOrDefault();
 
             if (newLicence != null)
             {
-                _context.AddLink(account, nameof(account.spd_organization_spd_licence_soleproprietor), newLicence);
+                _context.AddLink(account, new Relationship("spd_organization_spd_licence_soleproprietor"), newLicence);
             }
         }
 
-        private async Task UpdateSPBizContact(account account, Guid? licenceId, CancellationToken ct)
+        private Task UpdateSPBizContact(Account account, Guid? licenceId, CancellationToken ct)
         {
-            if (licenceId == null) return;
-            IQueryable<spd_businesscontact> bizExistingContacts = _context.spd_businesscontacts
-                .Where(b => b._spd_organizationid_value == account.accountid)
-                .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive);
+            if (licenceId == null) return Task.CompletedTask;
 
-            spd_businesscontact? validSpContact = bizExistingContacts.FirstOrDefault(
-                c => c.spd_role == (int)BizContactRoleOptionSet.ControllingMember && c._spd_swlnumber_value == licenceId
+            IQueryable<Spd_BusinessContact> bizExistingContacts = _context.Spd_BusinessContactSet
+                .Where(b => b.Spd_OrganizationId != null && b.Spd_OrganizationId.Id == account.AccountId)
+                .Where(a => a.StateCode != Spd_BusinessContact_StateCode.Inactive);
+
+            Spd_BusinessContact? validSpContact = bizExistingContacts.FirstOrDefault(
+                c => c.Spd_Role == Spd_BusinessContact_Spd_Role.ControllingMember && c.Spd_SwLNumber != null && c.Spd_SwLNumber.Id == licenceId
                 );
 
             if (validSpContact == null)
             {
-                //add a bizcontact
-                spd_licence? newLicence = await _context.spd_licences
-                    .Expand(l => l.spd_LicenceHolder_contact)
-                    .Where(l => l.spd_licenceid == licenceId)
-                    .Where(l => l.statecode == DynamicsConstants.StateCode_Active)
-                    .FirstOrDefaultAsync(ct);
-                contact? contact = await _context.contacts.Where(c => c.contactid == newLicence.spd_LicenceHolder_contact.contactid).FirstOrDefaultAsync(ct);
-                spd_businesscontact bizContact = new spd_businesscontact();
-                bizContact.spd_businesscontactid = Guid.NewGuid();
-                bizContact.spd_role = (int)BizContactRoleOptionSet.ControllingMember;
-                _context.AddTospd_businesscontacts(bizContact);
-                _context.SetLink(bizContact, nameof(bizContact.spd_ContactId), contact);
-                _context.SetLink(bizContact, nameof(bizContact.spd_OrganizationId), account);
-                _context.SetLink(bizContact, nameof(bizContact.spd_SWLNumber), newLicence);
+                Spd_Licence? newLicence = _context.Spd_LicenceSet
+                    .Where(l => l.Spd_LicenceId == licenceId)
+                    .Where(l => l.StateCode == Spd_Licence_StateCode.Active)
+                    .FirstOrDefault();
+
+                if (newLicence == null)
+                {
+                    return Task.CompletedTask;
+                }
+
+                _context.LoadProperty(newLicence, nameof(Spd_Licence.Spd_Contact_Spd_Licence_LicenceHolder));
+                Spd.Utilities.Dataverse.EarlyBound.Contact? contact = newLicence.Spd_Contact_Spd_Licence_LicenceHolder;
+                if (contact == null)
+                {
+                    return Task.CompletedTask;
+                }
+
+                Spd_BusinessContact bizContact = new Spd_BusinessContact
+                {
+                    Spd_BusinessContactId = Guid.NewGuid(),
+                    Spd_Role = Spd_BusinessContact_Spd_Role.ControllingMember,
+                    Spd_ContactId = contact.ToEntityReference(),
+                    Spd_OrganizationId = account.ToEntityReference(),
+                    Spd_SwLNumber = newLicence.ToEntityReference()
+                };
+
+                _context.AddObject(bizContact);
             }
+
+            return Task.CompletedTask;
         }
 
         private bool IsSoleProprietor(BizTypeEnum? bizType)

@@ -222,7 +222,7 @@ namespace Spd.Utilities.Dynamics
             if (!keyExisted) return null;
             return context.spd_servicetypes
                 .Where(s => s.spd_servicetypeid == guid)
-                .Where(s => s.statecode != DynamicsConstants.StateCode_Inactive)
+                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
                 .FirstOrDefault();
         }
 
@@ -269,7 +269,7 @@ namespace Spd.Utilities.Dynamics
             if (!keyExisted) return null;
             return context.spd_licencecategories
                 .Where(s => s.spd_licencecategoryid == guid)
-                .Where(s => s.statecode != DynamicsConstants.StateCode_Inactive)
+                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
                 .FirstOrDefault();
         }
 
@@ -300,7 +300,7 @@ namespace Spd.Utilities.Dynamics
             if (!keyExisted) return null;
             return context.spd_positions
                 .Where(s => s.spd_positionid == guid)
-                .Where(s => s.statecode != DynamicsConstants.StateCode_Inactive)
+                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
                 .FirstOrDefault();
         }
 
@@ -368,12 +368,12 @@ namespace Spd.Utilities.Dynamics
 
         public static async Task<spd_clearance?> GetClearanceById(this DynamicsContext context, Guid clearanceId, CancellationToken ct)
            => await context.spd_clearances.Where(a => a.spd_clearanceid == clearanceId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .SingleOrDefaultAsync(ct);
 
         public static async Task<spd_clearanceaccess?> GetClearanceAccessById(this DynamicsContext context, Guid clearanceAccessId, CancellationToken ct)
            => await context.spd_clearanceaccesses.Where(a => a.spd_clearanceaccessid == clearanceAccessId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .SingleOrDefaultAsync(ct);
 
         public static async Task<contact?> GetContactById(this DynamicsContext context, Guid contactId, CancellationToken ct)
@@ -409,7 +409,7 @@ namespace Spd.Utilities.Dynamics
 
         public static async Task<task?> GetTaskById(this DynamicsContext context, Guid taskId, CancellationToken ct)
            => await context.tasks.Where(a => a.activityid == taskId)
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .SingleOrDefaultAsync(ct);
         public static async Task<spd_identity?> GetIdentityById(this DynamicsContext context, Guid identityId, CancellationToken ct)
         {

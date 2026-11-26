@@ -212,7 +212,7 @@ namespace Spd.Manager.Screening
             if (cmd.IdirUserIdentity.Email != null)
             {
                 var existingUser = (PortalUserListResp)await _portalUserRepository.QueryAsync(
-                    new PortalUserQry() { UserEmail = cmd.IdirUserIdentity.Email, OrgIdOrParentOrgId = SpdConstants.BcGovOrgId },
+                    new PortalUserQry() { IdentityId = identityId },
                     ct);
 
                 var result = existingUser.Items.FirstOrDefault();
@@ -268,7 +268,7 @@ namespace Spd.Manager.Screening
             if (identity != null)
             {
                 var existingUser = (PortalUserListResp)await _portalUserRepository.QueryAsync(
-                    new PortalUserQry() { IdentityId = identityId, OrgIdOrParentOrgId = SpdConstants.BcGovOrgId },
+                    new PortalUserQry() { IdentityId = identityId },
                     ct);
                 var result = existingUser.Items.FirstOrDefault();
                 if (result != null)

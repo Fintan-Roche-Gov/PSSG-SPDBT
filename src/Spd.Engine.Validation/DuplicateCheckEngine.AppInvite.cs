@@ -42,7 +42,7 @@ namespace Spd.Engine.Validation
                 o.spd_firstname == query.FirstName &&
                 o.spd_surname == query.LastName &&
                 o.spd_invitationtype == (int)InvitationTypeOptionSet.ScreeningRequest &&
-                o.statecode != DynamicsConstants.StateCode_Inactive
+                o.statecode != DataverseConstants.StateCode_Inactive
             ).FirstOrDefaultAsync(cancellationToken);
             return orginvitation != null;
         }
@@ -53,7 +53,7 @@ namespace Spd.Engine.Validation
                 o.spd_OrganizationId.accountid == orgId &&
                 o.spd_firstname == query.FirstName &&
                 o.spd_lastname == query.LastName &&
-                o.statecode != DynamicsConstants.StateCode_Inactive
+                o.statecode != DataverseConstants.StateCode_Inactive
             ).FirstOrDefaultAsync(cancellationToken);
             return orginvitation != null;
         }

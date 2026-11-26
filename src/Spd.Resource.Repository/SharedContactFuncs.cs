@@ -1,83 +1,86 @@
-﻿using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+﻿using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
+using ContactEntity = Spd.Utilities.Dataverse.EarlyBound.Contact;
+using DataverseContext = Spd.Utilities.Dataverse.EarlyBound.DataverseContext;
 
 namespace Spd.Resource.Repository;
 internal static class SharedContactFuncs
 {
-    public static async Task<contact?> CreateContact(this DynamicsContext context,
-        contact contact,
-        spd_identity? identity,
-        IEnumerable<spd_alias> aliases,
+    public static async Task<ContactEntity?> CreateContact(this DataverseContext context,
+        ContactEntity contact,
+        Spd_Identity? identity,
+        IEnumerable<Spd_Alias> aliases,
         CancellationToken ct)
     {
-        context.AddTocontacts(contact);
+        context.AddObject(contact);
         if (identity != null)
-            context.AddLink(contact, nameof(contact.spd_contact_spd_identity), identity);
+            identity.Spd_ContactId = contact.ToEntityReference();
         if (aliases != null && aliases.Any())
         {
             foreach (var alias in aliases)
             {
                 if (AliasExists(context, alias, contact) == null)
                 {
-                    context.AddTospd_aliases(alias);
+                    context.AddObject(alias);
                     // associate alias to contact
-                    context.SetLink(alias, nameof(alias.spd_ContactId), contact);
+                    alias.Spd_ContactId = contact.ToEntityReference();
                 }
             }
         }
         return contact;
     }
 
-    public static async Task<contact?> UpdateContact(this DynamicsContext context,
-        contact existingContact,
-        contact newContact,
-        spd_identity? identity,
-        IEnumerable<spd_alias> aliases,
+    public static async Task<ContactEntity?> UpdateContact(this DataverseContext context,
+        ContactEntity existingContact,
+        ContactEntity newContact,
+        Spd_Identity? identity,
+        IEnumerable<Spd_Alias> aliases,
         CancellationToken ct,
         bool isPartialSave = false)
     {
         if (!NameIsSame(existingContact, newContact) && !isPartialSave)
         {
             //put old name to spd_alias
-            spd_alias newAlias = new spd_alias
+            Spd_Alias newAlias = new Spd_Alias
             {
-                spd_firstname = existingContact.firstname,
-                spd_surname = existingContact.lastname,
-                spd_middlename1 = existingContact.spd_middlename1,
-                spd_middlename2 = existingContact.spd_middlename2,
-                spd_source = (int)AliasSourceTypeOptionSet.UserEntered,
+                Spd_FirstName = existingContact.FirstName,
+                Spd_Surname = existingContact.LastName,
+                Spd_MiddleName1 = existingContact.Spd_MiddleName1,
+                Spd_MiddleName2 = existingContact.Spd_MiddleName2,
+                Spd_Source = Spd_Alias_Spd_Source.UserEntered,
             };
             if (AliasExists(context, newAlias, existingContact) == null)
             {
-                context.AddTospd_aliases(newAlias);
+                context.AddObject(newAlias);
                 // associate alias to contact
-                context.SetLink(newAlias, nameof(newAlias.spd_ContactId), existingContact);
+                newAlias.Spd_ContactId = existingContact.ToEntityReference();
             }
         }
 
         //when we found address is different, need to put current address to previous address.
-        if (newContact.address1_country != null && newContact.address1_line1 != null && !MailingAddressIsSame(existingContact, newContact) && !isPartialSave)
+        if (newContact.Address1_Country != null && newContact.Address1_Line1 != null && !MailingAddressIsSame(existingContact, newContact) && !isPartialSave)
         {
             //put old address to spd_address
-            spd_address newAddress = CreateAddrFromContact(existingContact, true);
+            Spd_Address newAddress = CreateAddrFromContact(existingContact, true);
             if (AddressExists(context, newAddress, existingContact) == null)
             {
-                context.AddTospd_addresses(newAddress);
+                context.AddObject(newAddress);
                 // associate address to contact
-                context.SetLink(newAddress, nameof(newAddress.spd_Contact), existingContact);
+                newAddress.Spd_Contact = existingContact.ToEntityReference();
             }
         }
 
         //when we found residential address is different, need to put current address to previous address.
-        if (newContact.address2_country != null && newContact.address2_line1 != null && !ResidentialAddressIsSame(existingContact, newContact) && !isPartialSave)
+        if (newContact.Address2_Country != null && newContact.Address2_Line1 != null && !ResidentialAddressIsSame(existingContact, newContact) && !isPartialSave)
         {
             //put old address to spd_address
-            spd_address newAddress = CreateAddrFromContact(existingContact, false);
-            if (newAddress.spd_address1 != null && newAddress.spd_country != null && AddressExists(context, newAddress, existingContact) == null)
+            Spd_Address newAddress = CreateAddrFromContact(existingContact, false);
+            if (newAddress.Spd_Address1 != null && newAddress.Spd_Country != null && AddressExists(context, newAddress, existingContact) == null)
             {
-                context.AddTospd_addresses(newAddress);
+                context.AddObject(newAddress);
                 // associate address to contact
-                context.SetLink(newAddress, nameof(newAddress.spd_Contact), existingContact);
+                newAddress.Spd_Contact = existingContact.ToEntityReference();
             }
         }
         //update current contact
@@ -90,9 +93,9 @@ internal static class SharedContactFuncs
             {
                 if (AliasExists(context, alias, existingContact) == null)
                 {
-                    context.AddTospd_aliases(alias);
+                    context.AddObject(alias);
                     // associate alias to contact
-                    context.SetLink(alias, nameof(alias.spd_ContactId), existingContact);
+                    alias.Spd_ContactId = existingContact.ToEntityReference();
                 }
             }
         }
@@ -100,119 +103,119 @@ internal static class SharedContactFuncs
         return existingContact;
     }
 
-    private static spd_alias? AliasExists(DynamicsContext context, spd_alias newAlias, contact contact)
+    private static Spd_Alias? AliasExists(DataverseContext context, Spd_Alias newAlias, ContactEntity contact)
     {
-        var matchingAlias = context.spd_aliases.Where(o =>
-           o.spd_firstname == newAlias.spd_firstname &&
-           o.spd_middlename1 == newAlias.spd_middlename1 &&
-           o.spd_middlename2 == newAlias.spd_middlename2 &&
-           o.spd_surname == newAlias.spd_surname &&
-           o.statecode != DynamicsConstants.StateCode_Inactive &&
-           o._spd_contactid_value == contact.contactid &&
-           o.spd_source == (int)AliasSourceTypeOptionSet.UserEntered
+        var matchingAlias = context.Spd_AliasSet.Where(o =>
+           o.Spd_FirstName == newAlias.Spd_FirstName &&
+           o.Spd_MiddleName1 == newAlias.Spd_MiddleName1 &&
+           o.Spd_MiddleName2 == newAlias.Spd_MiddleName2 &&
+           o.Spd_Surname == newAlias.Spd_Surname &&
+           o.StateCode != Spd_Alias_StateCode.Inactive &&
+           o.Spd_ContactId != null && o.Spd_ContactId.Id == contact.ContactId &&
+           o.Spd_Source == Spd_Alias_Spd_Source.UserEntered
        ).FirstOrDefault();
         return matchingAlias;
     }
 
-    private static bool NameIsSame(contact existed, contact newOne)
+    private static bool NameIsSame(ContactEntity existed, ContactEntity newOne)
     {
-        return (string.Equals(existed.firstname, newOne.firstname, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existed.lastname, newOne.lastname, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existed.spd_middlename1, newOne.spd_middlename1, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existed.spd_middlename2, newOne.spd_middlename2, StringComparison.InvariantCultureIgnoreCase));
+        return (string.Equals(existed.FirstName, newOne.FirstName, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existed.LastName, newOne.LastName, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existed.Spd_MiddleName1, newOne.Spd_MiddleName1, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existed.Spd_MiddleName2, newOne.Spd_MiddleName2, StringComparison.InvariantCultureIgnoreCase));
     }
 
-    private static bool MailingAddressIsSame(contact existingContact, contact newContact)
+    private static bool MailingAddressIsSame(ContactEntity existingContact, ContactEntity newContact)
     {
-        return (string.Equals(existingContact.address1_line1, newContact.address1_line1, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address1_line2, newContact.address1_line2, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address1_city, newContact.address1_city, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address1_country, newContact.address1_country, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address1_postalcode, newContact.address1_postalcode, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address1_stateorprovince, newContact.address1_stateorprovince, StringComparison.InvariantCultureIgnoreCase));
+        return (string.Equals(existingContact.Address1_Line1, newContact.Address1_Line1, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address1_Line2, newContact.Address1_Line2, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address1_City, newContact.Address1_City, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address1_Country, newContact.Address1_Country, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address1_PostalCode, newContact.Address1_PostalCode, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address1_StateOrProvince, newContact.Address1_StateOrProvince, StringComparison.InvariantCultureIgnoreCase));
     }
 
-    private static bool ResidentialAddressIsSame(contact existingContact, contact newContact)
+    private static bool ResidentialAddressIsSame(ContactEntity existingContact, ContactEntity newContact)
     {
-        return (string.Equals(existingContact.address2_line1, newContact.address2_line1, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address2_line2, newContact.address2_line2, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address2_city, newContact.address2_city, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address2_country, newContact.address2_country, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address2_postalcode, newContact.address2_postalcode, StringComparison.InvariantCultureIgnoreCase)
-            && string.Equals(existingContact.address2_stateorprovince, newContact.address2_stateorprovince, StringComparison.InvariantCultureIgnoreCase));
+        return (string.Equals(existingContact.Address2_Line1, newContact.Address2_Line1, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address2_Line2, newContact.Address2_Line2, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address2_City, newContact.Address2_City, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address2_Country, newContact.Address2_Country, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address2_PostalCode, newContact.Address2_PostalCode, StringComparison.InvariantCultureIgnoreCase)
+            && string.Equals(existingContact.Address2_StateOrProvince, newContact.Address2_StateOrProvince, StringComparison.InvariantCultureIgnoreCase));
     }
-    private static spd_address? AddressExists(DynamicsContext context, spd_address newAddr, contact contact)
+    private static Spd_Address? AddressExists(DataverseContext context, Spd_Address newAddr, ContactEntity contact)
     {
-        var matchingAddr = context.spd_addresses.Where(o =>
-           o.spd_address1 == newAddr.spd_address1 &&
-           o.spd_address2 == newAddr.spd_address2 &&
-           o.spd_city == newAddr.spd_city &&
-           o.spd_country == newAddr.spd_country &&
-           o.spd_provincestate == newAddr.spd_provincestate &&
-           o.statecode != DynamicsConstants.StateCode_Inactive &&
-           o._spd_contact_value == contact.contactid &&
-           o.spd_type == newAddr.spd_type
+        var matchingAddr = context.Spd_AddressSet.Where(o =>
+           o.Spd_Address1 == newAddr.Spd_Address1 &&
+           o.Spd_Address2 == newAddr.Spd_Address2 &&
+           o.Spd_City == newAddr.Spd_City &&
+           o.Spd_Country == newAddr.Spd_Country &&
+           o.Spd_ProvinceState == newAddr.Spd_ProvinceState &&
+           o.StateCode != Spd_Address_StateCode.Inactive &&
+           o.Spd_Contact != null && o.Spd_Contact.Id == contact.ContactId &&
+           o.Spd_Type == newAddr.Spd_Type
        ).FirstOrDefault();
         return matchingAddr;
     }
 
-    private static spd_address CreateAddrFromContact(contact c, bool isMailing)
+    private static Spd_Address CreateAddrFromContact(ContactEntity c, bool isMailing)
     {
-        return new spd_address
+        return new Spd_Address
         {
-            spd_address1 = isMailing ? c.address1_line1 : c.address2_line1,
-            spd_address2 = isMailing ? c.address1_line2 : c.address2_line2,
-            spd_city = isMailing ? c.address1_city : c.address2_city,
-            spd_country = isMailing ? c.address1_country : c.address2_country,
-            spd_provincestate = isMailing ? c.address1_stateorprovince : c.address2_stateorprovince,
-            spd_postalcode = isMailing ? c.address1_postalcode : c.address2_postalcode,
-            spd_type = isMailing ? (int)AddressTypeOptionSet.Mailing : (int)AddressTypeOptionSet.Physical
+            Spd_Address1 = isMailing ? c.Address1_Line1 : c.Address2_Line1,
+            Spd_Address2 = isMailing ? c.Address1_Line2 : c.Address2_Line2,
+            Spd_City = isMailing ? c.Address1_City : c.Address2_City,
+            Spd_Country = isMailing ? c.Address1_Country : c.Address2_Country,
+            Spd_ProvinceState = isMailing ? c.Address1_StateOrProvince : c.Address2_StateOrProvince,
+            Spd_PostalCode = isMailing ? c.Address1_PostalCode : c.Address2_PostalCode,
+            Spd_Type = isMailing ? Spd_AddressType.Mailing : Spd_AddressType.Physical
         };
     }
 
-    private static contact UpdateExistingContact(contact existingContact, contact newContact)
+    private static ContactEntity UpdateExistingContact(ContactEntity existingContact, ContactEntity newContact)
     {
-        if (newContact.address1_country != null && newContact.address1_line1 != null && newContact.address1_city != null)
+        if (newContact.Address1_Country != null && newContact.Address1_Line1 != null && newContact.Address1_City != null)
         {
-            existingContact.address1_city = newContact.address1_city;
-            existingContact.address1_country = newContact.address1_country;
-            existingContact.address1_line1 = newContact.address1_line1;
-            existingContact.address1_line2 = newContact.address1_line2;
-            existingContact.address1_postalcode = newContact.address1_postalcode;
-            existingContact.address1_stateorprovince = newContact.address1_stateorprovince;
+            existingContact.Address1_City = newContact.Address1_City;
+            existingContact.Address1_Country = newContact.Address1_Country;
+            existingContact.Address1_Line1 = newContact.Address1_Line1;
+            existingContact.Address1_Line2 = newContact.Address1_Line2;
+            existingContact.Address1_PostalCode = newContact.Address1_PostalCode;
+            existingContact.Address1_StateOrProvince = newContact.Address1_StateOrProvince;
         }
 
-        if (newContact.address2_country != null && newContact.address2_line1 != null && newContact.address2_city != null)
+        if (newContact.Address2_Country != null && newContact.Address2_Line1 != null && newContact.Address2_City != null)
         {
-            existingContact.address2_city = newContact.address2_city;
-            existingContact.address2_country = newContact.address2_country;
-            existingContact.address2_line1 = newContact.address2_line1;
-            existingContact.address2_line2 = newContact.address2_line2;
-            existingContact.address2_postalcode = newContact.address2_postalcode;
-            existingContact.address2_stateorprovince = newContact.address2_stateorprovince;
+            existingContact.Address2_City = newContact.Address2_City;
+            existingContact.Address2_Country = newContact.Address2_Country;
+            existingContact.Address2_Line1 = newContact.Address2_Line1;
+            existingContact.Address2_Line2 = newContact.Address2_Line2;
+            existingContact.Address2_PostalCode = newContact.Address2_PostalCode;
+            existingContact.Address2_StateOrProvince = newContact.Address2_StateOrProvince;
         }
 
-        existingContact.firstname = newContact.firstname ?? string.Empty;
-        existingContact.lastname = newContact.lastname ?? string.Empty;
-        existingContact.spd_middlename1 = newContact.spd_middlename1 ?? string.Empty;
-        existingContact.spd_middlename2 = newContact.spd_middlename2 ?? string.Empty;
-        existingContact.spd_sex = newContact.spd_sex ?? existingContact.spd_sex;
-        existingContact.birthdate = newContact.birthdate ?? existingContact.birthdate;
-        existingContact.telephone1 = newContact.telephone1 ?? existingContact.telephone1;
-        existingContact.spd_bcdriverslicense = newContact.spd_bcdriverslicense ?? existingContact.spd_bcdriverslicense;
-        existingContact.emailaddress1 = newContact.emailaddress1 ?? existingContact.emailaddress1;
-        existingContact.spd_mentalhealthcondition = newContact.spd_mentalhealthcondition ?? existingContact.spd_mentalhealthcondition;
-        existingContact.spd_peaceofficer = newContact.spd_peaceofficer ?? existingContact.spd_peaceofficer;
-        existingContact.spd_peaceofficerother = newContact.spd_peaceofficerother ?? existingContact.spd_peaceofficerother;
-        existingContact.spd_peaceofficerstatus = newContact.spd_peaceofficerstatus ?? existingContact.spd_peaceofficerstatus;
-        existingContact.spd_selfdisclosure = newContact.spd_selfdisclosure ?? existingContact.spd_selfdisclosure;
-        existingContact.spd_selfdisclosuredetails = newContact.spd_selfdisclosuredetails ?? existingContact.spd_selfdisclosuredetails;
-        existingContact.spd_lastloggedinlicensingportal = newContact.spd_lastloggedinlicensingportal ?? existingContact.spd_lastloggedinlicensingportal;
-        existingContact.spd_lastloggedinscreeningportal = newContact.spd_lastloggedinscreeningportal ?? existingContact.spd_lastloggedinscreeningportal;
-        existingContact.spd_height = newContact.spd_height ?? existingContact.spd_height;
-        existingContact.spd_weight = newContact.spd_weight ?? existingContact.spd_weight;
-        existingContact.spd_eyecolour = newContact.spd_eyecolour ?? existingContact.spd_eyecolour;
-        existingContact.spd_haircolour = newContact.spd_haircolour ?? existingContact.spd_haircolour;
+        existingContact.FirstName = newContact.FirstName ?? string.Empty;
+        existingContact.LastName = newContact.LastName ?? string.Empty;
+        existingContact.Spd_MiddleName1 = newContact.Spd_MiddleName1 ?? string.Empty;
+        existingContact.Spd_MiddleName2 = newContact.Spd_MiddleName2 ?? string.Empty;
+        existingContact.Spd_Sex = newContact.Spd_Sex ?? existingContact.Spd_Sex;
+        existingContact.Birthdate = newContact.Birthdate ?? existingContact.Birthdate;
+        existingContact.Telephone1 = newContact.Telephone1 ?? existingContact.Telephone1;
+        existingContact.Spd_BcDriversLicense = newContact.Spd_BcDriversLicense ?? existingContact.Spd_BcDriversLicense;
+        existingContact.EmailAddress1 = newContact.EmailAddress1 ?? existingContact.EmailAddress1;
+        existingContact.Spd_MentalHealthCondition = newContact.Spd_MentalHealthCondition ?? existingContact.Spd_MentalHealthCondition;
+        existingContact.Spd_PeaceOfficer = newContact.Spd_PeaceOfficer ?? existingContact.Spd_PeaceOfficer;
+        existingContact.Spd_PeaceOfficerOther = newContact.Spd_PeaceOfficerOther ?? existingContact.Spd_PeaceOfficerOther;
+        existingContact.Spd_PeaceOfficerStatus = newContact.Spd_PeaceOfficerStatus ?? existingContact.Spd_PeaceOfficerStatus;
+        existingContact.Spd_SelfDisclosure = newContact.Spd_SelfDisclosure ?? existingContact.Spd_SelfDisclosure;
+        existingContact.Spd_SelfDisclosureDetails = newContact.Spd_SelfDisclosureDetails ?? existingContact.Spd_SelfDisclosureDetails;
+        existingContact.Spd_LastLoggedInLicensingPortal = newContact.Spd_LastLoggedInLicensingPortal ?? existingContact.Spd_LastLoggedInLicensingPortal;
+        existingContact.Spd_LastLoggedInScreeningPortal = newContact.Spd_LastLoggedInScreeningPortal ?? existingContact.Spd_LastLoggedInScreeningPortal;
+        existingContact.Spd_Height = newContact.Spd_Height ?? existingContact.Spd_Height;
+        existingContact.Spd_Weight = newContact.Spd_Weight ?? existingContact.Spd_Weight;
+        existingContact.Spd_EyeColour = newContact.Spd_EyeColour ?? existingContact.Spd_EyeColour;
+        existingContact.Spd_HairColour = newContact.Spd_HairColour ?? existingContact.Spd_HairColour;
         return existingContact;
     }
 }

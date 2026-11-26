@@ -1,27 +1,28 @@
 using AutoMapper;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
-using Microsoft.OData.Client;
-using Spd.Utilities.Dynamics;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using DataverseContext = Spd.Utilities.Dataverse.EarlyBound.DataverseContext;
 
 namespace Spd.Resource.Repository.PortalUser;
 internal class PortalUserRepository : IPortalUserRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly DataverseContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<PortalUserRepository> _logger;
     private readonly ITimeLimitedDataProtector _dataProtector;
 
-    public PortalUserRepository(IDynamicsContextFactory ctx,
+    public PortalUserRepository(DataverseContext ctx,
         IMapper mapper,
         ILogger<PortalUserRepository> logger,
         IDataProtectionProvider dpProvider)
     {
-        _context = ctx.CreateChangeOverwrite();
+        _context = ctx;
         _mapper = mapper;
         _logger = logger;
         _dataProtector = dpProvider.CreateProtector(nameof(CreatePortalUserCmd)).ToTimeLimitedDataProtector();
@@ -59,96 +60,114 @@ internal class PortalUserRepository : IPortalUserRepository
             throw new ApiException(HttpStatusCode.Accepted, "The invitation link is no longer valid.");
         }
 
-        var invite = await _context.spd_portalinvitations
-            .Expand(i => i.spd_OrganizationId)
-            .Where(i => i.spd_portalinvitationid == inviteId)
-            .Where(i => i.spd_invitationtype == (int)InvitationTypeOptionSet.PortalUser)
-            .Where(i => i.statecode != DynamicsConstants.StateCode_Inactive)
-            .FirstOrDefaultAsync(ct);
+        var invite = _context.Spd_PortalInvitationSet
+            .Where(i => i.Spd_PortalInvitationId == inviteId)
+            .Where(i => i.Spd_InvitationType == Spd_PortalInvitation_Spd_InvitationType.PortalUser)
+            .Where(i => i.StateCode != Spd_PortalInvitation_StateCode.Inactive)
+            .FirstOrDefault();
+
+
         if (invite == null)
             throw new ApiException(HttpStatusCode.Accepted, "The invitation link is no longer valid.");
-        if (!string.Equals(invite.spd_OrganizationId.spd_orgguid, verify.OrgGuid.ToString(), StringComparison.InvariantCultureIgnoreCase))
+        Account? inviteOrg = invite.Spd_OrganizationId == null
+            ? null
+            : _context.AccountSet.Where(a => a.AccountId == invite.Spd_OrganizationId.Id).FirstOrDefault();
+        if (!string.Equals(inviteOrg?.Spd_OrgGuid, verify.OrgGuid.ToString(), StringComparison.InvariantCultureIgnoreCase))
             throw new ApiException(HttpStatusCode.Accepted, "There is a mismatch between the invite organization and your bceid organization.");
 
         //verified, now add/link identity to user.
-        spd_identity? identity = await _context.spd_identities
-            .Where(i => i.spd_userguid == verify.UserGuid.ToString() && i.spd_orgguid == verify.OrgGuid.ToString())
-            .Where(i => i.statecode == DynamicsConstants.StateCode_Active)
-            .FirstOrDefaultAsync(ct);
+        Spd_Identity? identity = _context.Spd_IdentitySet
+            .Where(i => i.Spd_UserGuid == verify.UserGuid.ToString() && i.Spd_OrgGuid == verify.OrgGuid.ToString())
+            .Where(i => i.StateCode == Spd_Identity_StateCode.Active)
+            .FirstOrDefault();
         if (identity == null)
         {
-            identity = new spd_identity()
+            identity = new Spd_Identity()
             {
-                spd_identityid = Guid.NewGuid(),
-                spd_orgguid = verify.OrgGuid.ToString(),
-                spd_userguid = verify.UserGuid.ToString(),
-                spd_type = (int)IdentityTypeOptionSet.BusinessBceId
+                Spd_IdentityId = Guid.NewGuid(),
+                Spd_OrgGuid = verify.OrgGuid.ToString(),
+                Spd_UserGuid = verify.UserGuid.ToString(),
+                Spd_Type = Spd_IdentityProvider.BusinessBceid
             };
-            _context.AddTospd_identities(identity);
+            _context.AddObject(identity);
         }
         else //the user already has identity in the system, probably used by other org.
         {
             //check if current org already has the same user
-            spd_portaluser? dupUser = await _context.spd_portalusers
-                .Where(u => u.spd_servicecategory == (int)PortalUserServiceCategoryOptionSet.Licensing)
-                .Where(u => u._spd_identityid_value == identity.spd_identityid)
-                .Where(u => u.statecode == DynamicsConstants.StateCode_Active)
-                .Where(u => u._spd_organizationid_value == invite._spd_organizationid_value)
-                .Where(u => u.spd_portaluserid != invite._spd_portaluserid_value)
-                .FirstOrDefaultAsync(ct);
+            Spd_PortalUser? dupUser = _context.Spd_PortalUserSet
+                .Where(u => u.Spd_ServiceCategory == Spd_ServiceCategory.Licensing)
+                .Where(u => u.Spd_IdentityId != null && u.Spd_IdentityId.Id == identity.Spd_IdentityId)
+                .Where(u => u.StateCode == Spd_PortalUser_StateCode.Active)
+                .Where(u => u.Spd_OrganizationId != null && invite.Spd_OrganizationId != null && u.Spd_OrganizationId.Id == invite.Spd_OrganizationId.Id)
+                .Where(u => u.Spd_PortalUserId != (invite.Spd_PortalUserId == null ? null : invite.Spd_PortalUserId.Id))
+                .FirstOrDefault();
             if (dupUser != null)
                 throw new ApiException(HttpStatusCode.Accepted, "Your BCeID is already associated to a user in this organization.");
         }
 
-        Guid userId = invite._spd_portaluserid_value ?? Guid.Empty;
-        var user = await _context.GetUserById(userId, ct);
-        _context.SetLink(user, nameof(user.spd_IdentityId), identity);
+        Guid userId = invite.Spd_PortalUserId?.Id ?? Guid.Empty;
+        Spd_PortalUser user = await GetUserById(userId, ct);
+        user.Spd_IdentityId = identity?.ToEntityReference();
+        _context.UpdateObject(user);
 
         //set invite views
-        invite.spd_views = (invite.spd_views ?? 0) + 1;
-        invite.statecode = DynamicsConstants.StateCode_Inactive;
-        invite.statuscode = (int)Enum.Parse<InvitationStatus>(ApplicationInviteStatusEnum.Completed.ToString());
+        invite.Spd_Views = (invite.Spd_Views ?? 0) + 1;
+        invite.StateCode = Spd_PortalInvitation_StateCode.Inactive;
+        invite.StatusCode = Spd_PortalInvitation_StatusCode.Completed;
         _context.UpdateObject(invite);
 
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
         return new PortalUserResp()
         {
-            OrganizationId = user._spd_organizationid_value ?? Guid.Empty,
+            OrganizationId = user.Spd_OrganizationId?.Id ?? Guid.Empty,
         };
     }
     private async Task<PortalUserListResp> ListUsersAsync(PortalUserQry qry, CancellationToken cancellationToken)
     {
-        IQueryable<spd_portaluser> users = _context.spd_portalusers
-                    .Expand(u => u.spd_spd_role_spd_portaluser)
-                    .Expand(d => d.spd_OrganizationId);
-        IEnumerable<spd_portaluser> userList;
+        IQueryable<Spd_PortalUser> users = _context.Spd_PortalUserSet;
+        IEnumerable<Spd_PortalUser> userList;
 
         if (!qry.IncludeInactive)
-            users = users.Where(d => d.statecode != DynamicsConstants.StateCode_Inactive);
-        if (qry.OrgId != null) users = users.Where(d => d._spd_organizationid_value == qry.OrgId);
-        if (qry.UserEmail != null) users = users.Where(d => d.spd_emailaddress1 == qry.UserEmail);
-        if (qry.IdentityId != null) users = users.Where(d => d._spd_identityid_value == qry.IdentityId);
+            users = users.Where(d => d.StateCode != Spd_PortalUser_StateCode.Inactive);
+        if (qry.OrgId != null) users = users.Where(d => d.Spd_OrganizationId != null && d.Spd_OrganizationId.Id == qry.OrgId);
+        if (qry.UserEmail != null) users = users.Where(d => d.Spd_EmailAddress1 == qry.UserEmail);
+        if (qry.IdentityId != null) users = users.Where(d => d.Spd_IdentityId != null && d.Spd_IdentityId.Id == qry.IdentityId);
         if (qry.PortalUserServiceCategory == null || qry.PortalUserServiceCategory == PortalUserServiceCategoryEnum.Screening)
-            users = users.Where(d => d.spd_servicecategory == null || d.spd_servicecategory == (int)PortalUserServiceCategoryOptionSet.Screening);
+            users = users.Where(d => d.Spd_ServiceCategory == null || d.Spd_ServiceCategory == Spd_ServiceCategory.Screening);
         else
-            users = users.Where(d => d.spd_servicecategory == (int)PortalUserServiceCategoryOptionSet.Licensing);
+            users = users.Where(d => d.Spd_ServiceCategory == Spd_ServiceCategory.Licensing);
         if (qry.ContactRoleCode != null && qry.ContactRoleCode.Any())
         {
-            IEnumerable<Guid> crIds = qry.ContactRoleCode.Select(c => DynamicsContextLookupHelpers.RoleGuidDictionary.GetValueOrDefault(c.ToString()));
-            userList = users.AsEnumerable().Where(u => crIds.Any(c => u.spd_spd_role_spd_portaluser.Any(role => role.spd_roleid == c)));
+            IEnumerable<string> roleNames = qry.ContactRoleCode.Select(c => c.ToString());
+            userList = users.AsEnumerable().Where(u =>
+            {
+                _context.LoadProperty(u, nameof(u.Spd_Spd_Role_Spd_PortalUser));
+                return roleNames.Any(roleName => u.Spd_Spd_Role_Spd_PortalUser.Any(role => role.Spd_Name == roleName));
+            });
         }
         else
         {
             userList = users.ToList();
         }
-        IEnumerable<spd_portaluser> results = userList;
+        IEnumerable<Spd_PortalUser> results = userList;
         if (qry.ParentOrgId != null)
         {
-            results = userList.Where(u => u.spd_OrganizationId._parentaccountid_value == qry.ParentOrgId);
+            results = userList.Where(u =>
+            {
+                if (u.Spd_OrganizationId == null) return false;
+                Account? org = _context.AccountSet.Where(a => a.AccountId == u.Spd_OrganizationId.Id).FirstOrDefault();
+                return org?.ParentAccountId?.Id == qry.ParentOrgId;
+            });
         }
         if (qry.OrgIdOrParentOrgId != null)
         {
-            results = userList.Where(d => d._spd_organizationid_value == qry.OrgIdOrParentOrgId || d.spd_OrganizationId?._parentaccountid_value == qry.OrgIdOrParentOrgId);
+            results = userList.Where(u =>
+            {
+                bool orgMatch = u.Spd_OrganizationId?.Id == qry.OrgIdOrParentOrgId;
+                Account? org = u.Spd_OrganizationId == null ? null : _context.AccountSet.Where(a => a.AccountId == u.Spd_OrganizationId.Id).FirstOrDefault();
+                bool parentMatch = org?.ParentAccountId?.Id == qry.OrgIdOrParentOrgId;
+                return orgMatch || parentMatch;
+            });
         }
         return new PortalUserListResp
         {
@@ -158,11 +177,11 @@ internal class PortalUserRepository : IPortalUserRepository
     private async Task<PortalUserResp> DeleteProtalUserAsync(Guid userId, CancellationToken cancellationToken)
     {
         var user = await GetUserById(userId, cancellationToken);
-        if (user._spd_identityid_value.HasValue)
+        if (user.Spd_IdentityId != null)
         {
             // Inactivate the user
-            user.statecode = DynamicsConstants.StateCode_Inactive;
-            user.statuscode = DynamicsConstants.StatusCode_Inactive;
+            user.StateCode = Spd_PortalUser_StateCode.Inactive;
+            user.StatusCode = Spd_PortalUser_StatusCode.Inactive;
             _context.UpdateObject(user);
         }
         else
@@ -175,76 +194,77 @@ internal class PortalUserRepository : IPortalUserRepository
             _context.DeleteObject(user);
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        _context.SaveChanges();
         return new PortalUserResp();
     }
-    private spd_portalinvitation? GetPortalInvitationByUserId(Guid userId)
+    private Spd_PortalInvitation? GetPortalInvitationByUserId(Guid userId)
     {
-        var spd_portalinvitation = _context.spd_portalinvitations
-            .Where(a => a._spd_portaluserid_value == userId)
+        var spd_portalinvitation = _context.Spd_PortalInvitationSet
+            .Where(a => a.Spd_PortalUserId != null && a.Spd_PortalUserId.Id == userId)
             .FirstOrDefault();
 
         return spd_portalinvitation;
     }
     private async Task<PortalUserResp> UpdatePortalUserAsync(UpdatePortalUserCmd c, CancellationToken ct)
     {
-        spd_portaluser portalUser = await GetUserById(c.Id, ct);
-        account? org = null;
-        spd_identity? identity = null;
-        if (c.FirstName != null) portalUser.spd_firstname = c.FirstName;
-        if (c.LastName != null) portalUser.spd_surname = c.LastName;
-        if (c.EmailAddress != null) portalUser.spd_emailaddress1 = c.EmailAddress;
-        if (c.PhoneNumber != null) portalUser.spd_phonenumber = c.PhoneNumber;
-        if (c.TermAgreeTime != null) portalUser.spd_lastloggedin = c.TermAgreeTime;
+        Spd_PortalUser portalUser = await GetUserById(c.Id, ct);
+        Account? org = null;
+        Spd_Identity? identity = null;
+        if (c.FirstName != null) portalUser.Spd_FirstName = c.FirstName;
+        if (c.LastName != null) portalUser.Spd_Surname = c.LastName;
+        if (c.EmailAddress != null) portalUser.Spd_EmailAddress1 = c.EmailAddress;
+        if (c.PhoneNumber != null) portalUser.Spd_PhoneNumber = c.PhoneNumber;
+        if (c.TermAgreeTime != null) portalUser.Spd_LastLoggedIn = c.TermAgreeTime.Value.UtcDateTime;
         _context.UpdateObject(portalUser);
 
-        if (c.OrgId != null && portalUser._spd_organizationid_value != c.OrgId)
+        if (c.OrgId != null && portalUser.Spd_OrganizationId?.Id != c.OrgId)
         {
-            org = await _context.GetOrgById((Guid)c.OrgId, ct);
-            _context.SetLink(portalUser, nameof(portalUser.spd_OrganizationId), org);
+            org = _context.AccountSet.Where(a => a.AccountId == c.OrgId).FirstOrDefault();
+            portalUser.Spd_OrganizationId = org?.ToEntityReference();
         }
-        if (c.IdentityId != null && portalUser._spd_identityid_value != c.IdentityId)
+        if (c.IdentityId != null && portalUser.Spd_IdentityId?.Id != c.IdentityId)
         {
-            identity = await _context.GetIdentityById((Guid)c.IdentityId, ct);
-            _context.SetLink(portalUser, nameof(portalUser.spd_IdentityId), identity);
+            identity = _context.Spd_IdentitySet.Where(i => i.Spd_IdentityId == c.IdentityId).FirstOrDefault();
+            portalUser.Spd_IdentityId = identity?.ToEntityReference();
         }
 
-        ContactRoleCode? currentContactRoleCode = SharedMappingFuncs.GetContactRoleCode(portalUser.spd_spd_role_spd_portaluser);
+        _context.LoadProperty(portalUser, nameof(portalUser.Spd_Spd_Role_Spd_PortalUser));
+        ContactRoleCode? currentContactRoleCode = SharedMappingFuncs.GetContactRoleCode(portalUser.Spd_Spd_Role_Spd_PortalUser);
 
         if (c.ContactRoleCode != null && currentContactRoleCode != c.ContactRoleCode)
         {
-            spd_role? currentRole = portalUser.spd_spd_role_spd_portaluser.FirstOrDefault();
+            Spd_Role? currentRole = portalUser.Spd_Spd_Role_Spd_PortalUser.FirstOrDefault();
             if (currentRole != null)
             {
-                _context.DeleteLink(portalUser, nameof(portalUser.spd_spd_role_spd_portaluser), currentRole);
+                _context.DeleteLink(portalUser, new Relationship(Spd_PortalUser.Fields.Spd_Spd_Role_Spd_PortalUser), currentRole);
             }
-            spd_role? role = _context.LookupRole(c.ContactRoleCode.ToString());
+            Spd_Role? role = LookupRole(c.ContactRoleCode.ToString());
             if (role != null)
             {
-                _context.AddLink(portalUser, nameof(portalUser.spd_spd_role_spd_portaluser), role);
+                _context.AddLink(portalUser, new Relationship(Spd_PortalUser.Fields.Spd_Spd_Role_Spd_PortalUser), role);
             }
         }
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
 
         portalUser = await GetUserById(c.Id, ct);
         return _mapper.Map<PortalUserResp>(portalUser);
     }
     private async Task<PortalUserResp> CreatePortalUserAsync(CreatePortalUserCmd c, CancellationToken ct)
     {
-        spd_portaluser portaluser = _mapper.Map<spd_portaluser>(c);
-        _context.AddTospd_portalusers(portaluser);
-        account? org = await _context.GetOrgById((Guid)c.OrgId, ct);
+        Spd_PortalUser portaluser = _mapper.Map<Spd_PortalUser>(c);
+        _context.AddObject(portaluser);
+        Account? org = _context.AccountSet.Where(a => a.AccountId == c.OrgId).FirstOrDefault();
         if (org == null)
         {
             _logger.LogError($"no valid org is found by orgId {c.OrgId}");
             throw new ApiException(System.Net.HttpStatusCode.BadRequest, "The organization is not valid.");
         }
-        _context.SetLink(portaluser, nameof(portaluser.spd_OrganizationId), org);
+        portaluser.Spd_OrganizationId = org.ToEntityReference();
 
-        spd_identity? identity = null;
+        Spd_Identity? identity = null;
         if (c.IdentityId != null)
         {
-            identity = await _context.GetIdentityById((Guid)c.IdentityId, ct);
+            identity = _context.Spd_IdentitySet.Where(i => i.Spd_IdentityId == c.IdentityId).FirstOrDefault();
             if (identity == null)
             {
                 _logger.LogError($"no valid identity for {c.IdentityId}");
@@ -252,33 +272,33 @@ internal class PortalUserRepository : IPortalUserRepository
             }
         }
         if (identity != null)
-            _context.SetLink(portaluser, nameof(portaluser.spd_IdentityId), identity);
+            portaluser.Spd_IdentityId = identity.ToEntityReference();
 
         if (c.ContactRoleCode != null)
         {
-            spd_role? role = _context.LookupRole(c.ContactRoleCode.ToString());
+            Spd_Role? role = LookupRole(c.ContactRoleCode.ToString());
             if (role != null)
             {
-                _context.AddLink(portaluser, nameof(portaluser.spd_spd_role_spd_portaluser), role);
+                _context.AddLink(portaluser, new Relationship(Spd_PortalUser.Fields.Spd_Spd_Role_Spd_PortalUser), role);
             }
         }
 
         // create portal invitation
         if (c.IdentityId == null)
         {
-            spd_portalinvitation invitation = _mapper.Map<spd_portalinvitation>(c);
-            var encryptedInviteId = WebUtility.UrlEncode(_dataProtector.Protect(invitation.spd_portalinvitationid.ToString(), DateTimeOffset.UtcNow.AddDays(SpdConstants.UserInviteValidDays)));
-            invitation.spd_invitationlink = $"{c.HostUrl}{SpdConstants.BizPortalUserInviteLink}{encryptedInviteId}";
-            _context.AddTospd_portalinvitations(invitation);
-            _context.SetLink(invitation, nameof(spd_portalinvitation.spd_OrganizationId), org);
-            _context.SetLink(invitation, nameof(spd_portalinvitation.spd_PortalUserId), portaluser);
+            Spd_PortalInvitation invitation = _mapper.Map<Spd_PortalInvitation>(c);
+            var encryptedInviteId = WebUtility.UrlEncode(_dataProtector.Protect(invitation.Spd_PortalInvitationId.ToString(), DateTimeOffset.UtcNow.AddDays(SpdConstants.UserInviteValidDays)));
+            invitation.Spd_InvitationLink = $"{c.HostUrl}{SpdConstants.BizPortalUserInviteLink}{encryptedInviteId}";
+            _context.AddObject(invitation);
+            invitation.Spd_OrganizationId = org.ToEntityReference();
+            invitation.Spd_PortalUserId = portaluser.ToEntityReference();
             if (c.CreatedByUserId != null)
             {
-                spd_portaluser invitedBy = await _context.GetUserById((Guid)c.CreatedByUserId, ct);
-                _context.SetLink(invitation, nameof(spd_portalinvitation.spd_InvitedBy), invitedBy);
+                Spd_PortalUser invitedBy = await GetUserById((Guid)c.CreatedByUserId, ct);
+                invitation.Spd_InvitedBy = invitedBy.ToEntityReference();
             }
         }
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
 
         PortalUserResp userResp = _mapper.Map<PortalUserResp>(portaluser);
         userResp.OrganizationId = c.OrgId;
@@ -286,31 +306,30 @@ internal class PortalUserRepository : IPortalUserRepository
         return userResp;
     }
 
-    private async Task<spd_portaluser> GetUserById(Guid userId, CancellationToken ct)
+    private async Task<Spd_PortalUser> GetUserById(Guid userId, CancellationToken ct)
     {
-        try
-        {
-            var user = await _context.GetUserById(userId, ct);
+        var user = _context.Spd_PortalUserSet.Where(u => u.Spd_PortalUserId == userId).FirstOrDefault();
 
-            if (user?.statecode == DynamicsConstants.StateCode_Inactive)
-                throw new InactiveException(HttpStatusCode.BadRequest, $"User '{userId}' is inactive.");
+        if (user?.StateCode == Spd_PortalUser_StateCode.Inactive)
+            throw new InactiveException(HttpStatusCode.BadRequest, $"User '{userId}' is inactive.");
 
-            if (user != null)
-                return user;
-            else
-                throw new NotFoundException(HttpStatusCode.BadRequest, $"The user with userId '{userId}' cannot be found.");
-        }
-        catch (DataServiceQueryException ex)
-        {
-            //is logger needed?
-            //_logger.LogWarning($"Cannot find the user with userId {userId}, message={ex.Message}");
-            throw;
-        }
+        if (user != null)
+            return user;
+
+        throw new NotFoundException(HttpStatusCode.BadRequest, $"The user with userId '{userId}' cannot be found.");
     }
     private async Task<PortalUserResp> GetUserAsync(Guid userId, CancellationToken ct)
     {
         var user = await GetUserById(userId, ct);
         var response = _mapper.Map<PortalUserResp>(user);
         return response;
+    }
+
+    private Spd_Role? LookupRole(string? roleKey)
+    {
+        if (string.IsNullOrEmpty(roleKey))
+            return null;
+
+        return _context.Spd_RoleSet.Where(r => r.Spd_Name == roleKey).FirstOrDefault();
     }
 }

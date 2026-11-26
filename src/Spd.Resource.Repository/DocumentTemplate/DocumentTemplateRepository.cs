@@ -37,7 +37,7 @@ internal class DocumentTemplateRepository : IDocumentTemplateRepository
             DocTemplateTypeEnum.ClearanceLetter => "Clearance Letter",
             _ => throw new NotSupportedException()
         };
-        bcgov_template? template = await _context.bcgov_templates.Where(t => t.statecode != DynamicsConstants.StateCode_Inactive)
+        bcgov_template? template = await _context.bcgov_templates.Where(t => t.statecode != DataverseConstants.StateCode_Inactive)
             .Where(t => t.bcgov_name == templateName)
             .FirstOrDefaultAsync(ct);
 

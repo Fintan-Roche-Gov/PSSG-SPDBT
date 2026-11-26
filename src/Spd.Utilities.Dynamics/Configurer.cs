@@ -5,6 +5,16 @@ using Spd.Utilities.Hosting;
 
 namespace Spd.Utilities.Dynamics;
 
+/// <summary>
+/// Configures OData-based Dynamics client (legacy).
+/// NOTE: This is being replaced by Spd.Utilities.Dataverse.Configurer which uses ServiceClient.
+/// 
+/// Migration path:
+/// 1. Ensure Spd.Utilities.Dataverse project is referenced
+/// 2. Add Spd.Utilities.Dataverse.Configurer to your startup configuration
+/// 3. Gradually migrate repository code to use IDataverseContextFactory instead of IDynamicsContextFactory
+/// 4. Once all repositories are migrated, this Configurer can be removed
+/// </summary>
 public class Configurer : IConfigureComponents, IProvideInstrumentationSources
 {
     public void Configure(ConfigurationContext configurationServices)

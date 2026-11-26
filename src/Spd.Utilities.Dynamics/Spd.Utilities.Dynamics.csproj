@@ -6,6 +6,7 @@
 					$(WarningsNotAsErrors);NU1903;CA1873
 				</WarningsNotAsErrors>
 				<NoWarn>CA1008;CA1707;CS8981</NoWarn>
+				<UserSecretsId>f3780041-950f-475c-8f2e-028ab326c07e</UserSecretsId>
 		</PropertyGroup>
 
 		<ItemGroup>
@@ -19,6 +20,7 @@
 		<ItemGroup>
 				<PackageReference Include="IdentityModel" />
 				<PackageReference Include="Microsoft.Extensions.Configuration" />
+				<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
 				<PackageReference Include="Microsoft.Extensions.DependencyInjection" />
 				<PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
 				<PackageReference Include="Microsoft.Extensions.Options" />

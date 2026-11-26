@@ -1,5 +1,5 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+using Spd.Utilities.Dataverse.EarlyBound;
 
 namespace Spd.Resource.Repository.Config
 {
@@ -7,10 +7,10 @@ namespace Spd.Resource.Repository.Config
     {
         public Mappings()
         {
-            _ = CreateMap<bcgov_config, ConfigItem>()
-             .ForMember(d => d.Key, opt => opt.MapFrom(s => s.bcgov_key))
-             .ForMember(d => d.Group, opt => opt.MapFrom(s => s.bcgov_group))
-             .ForMember(d => d.Value, opt => opt.MapFrom(s => s.bcgov_value));
+            _ = CreateMap<Bcgov_Config, ConfigItem>()
+             .ForMember(d => d.Key, opt => opt.MapFrom(s => s.Bcgov_Key))
+             .ForMember(d => d.Group, opt => opt.MapFrom(s => s.Bcgov_Group))
+             .ForMember(d => d.Value, opt => opt.MapFrom(s => s.Bcgov_Value));
         }
     }
 }

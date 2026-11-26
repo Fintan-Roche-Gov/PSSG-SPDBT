@@ -1,35 +1,34 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
-using Microsoft.OData.Client;
-using Spd.Utilities.Dynamics;
-
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
+using DataverseContext = Spd.Utilities.Dataverse.EarlyBound.DataverseContext;
 namespace Spd.Resource.Repository.Registration
 {
     internal class OrgRegistrationRepository : IOrgRegistrationRepository
     {
-        private readonly DynamicsContext _dynaContext;
+        private readonly DataverseContext _dynaContext;
         private readonly IMapper _mapper;
-        public OrgRegistrationRepository(IDynamicsContextFactory ctx, IMapper mapper, ILogger<OrgRegistrationRepository> logger)
+        public OrgRegistrationRepository(DataverseContext ctx, IMapper mapper, ILogger<OrgRegistrationRepository> logger)
         {
-            _dynaContext = ctx.CreateChangeOverwrite();
+            _dynaContext = ctx;
             _mapper = mapper;
         }
 
         public async Task<OrgRegistrationQueryResult> Query(OrgRegistrationQuery query, CancellationToken ct)
         {
-            var orgRegs = _dynaContext.spd_orgregistrations;
+            IQueryable<Spd_OrgRegistration> orgRegs = _dynaContext.Spd_OrgRegistrationSet;
 
             if (!query.IncludeInactive)
-                orgRegs = (DataServiceQuery<spd_orgregistration>)orgRegs.Where(o => o.statecode != DynamicsConstants.StateCode_Inactive);
+                orgRegs = orgRegs.Where(o => o.StateCode != Spd_OrgRegistration_StateCode.Inactive);
             if (query.UserGuid != null)
-                orgRegs = (DataServiceQuery<spd_orgregistration>)orgRegs.Where(o => o.spd_portaluseridentityguid == query.UserGuid.ToString());
+                orgRegs = orgRegs.Where(o => o.Spd_PortalUserIdentityGuid == query.UserGuid.ToString());
             if (query.OrgGuid != null)
-                orgRegs = (DataServiceQuery<spd_orgregistration>)orgRegs.Where(o => o.spd_identityguid == query.OrgGuid.ToString());
+                orgRegs = orgRegs.Where(o => o.Spd_IdentityGuid == query.OrgGuid.ToString());
             if (query.RegistrationNumber != null)
-                orgRegs = (DataServiceQuery<spd_orgregistration>)orgRegs.Where(o => o.spd_registrationnumber == query.RegistrationNumber);
+                orgRegs = orgRegs.Where(o => o.Spd_RegistrationNumber == query.RegistrationNumber);
 
-            IEnumerable<spd_orgregistration> results = await orgRegs.GetAllPagesAsync(ct);
+            IEnumerable<Spd_OrgRegistration> results = orgRegs.ToList();
             return new OrgRegistrationQueryResult(_mapper.Map<IEnumerable<OrgRegistrationResult>>(results));
         }
 
@@ -45,20 +44,35 @@ namespace Spd.Resource.Repository.Registration
                 key = $"{createRegistrationCmd.OrgRegistration.RegistrationTypeCode}-{createRegistrationCmd.OrgRegistration.VolunteerOrganizationTypeCode}";
             }
 
-            spd_orgregistration orgregistration = _mapper.Map<spd_orgregistration>(createRegistrationCmd.OrgRegistration);
-            _dynaContext.AddTospd_orgregistrations(orgregistration);
+            Spd_OrgRegistration orgregistration = _mapper.Map<Spd_OrgRegistration>(createRegistrationCmd.OrgRegistration);
+            _dynaContext.AddObject(orgregistration);
 
-            Guid teamGuid = Guid.Parse(DynamicsConstants.Client_Service_Team_Guid);
-            var serviceTeam = _dynaContext.teams.Where(t => t.teamid == teamGuid).FirstOrDefault();
-            _dynaContext.SetLink(orgregistration, nameof(spd_orgregistration.ownerid), serviceTeam);
-            _dynaContext.SetLink(orgregistration, nameof(spd_orgregistration.spd_OrganizationTypeId), _dynaContext.LookupOrganizationType(key));
-            await _dynaContext.SaveChangesAsync(ct);
+            Guid teamGuid = Guid.Parse(DataverseConstants.Client_Service_Team_Guid);
+            Team? serviceTeam = _dynaContext.TeamSet.Where(t => t.TeamId == teamGuid).FirstOrDefault();
+            if (serviceTeam != null)
+                orgregistration.OwnerId = serviceTeam.ToEntityReference();
 
-            spd_orgregistration? orgReg = await _dynaContext.spd_orgregistrations.Where(o => o.spd_orgregistrationid == orgregistration.spd_orgregistrationid).FirstOrDefaultAsync(ct);
+            if (DynamicsContextLookupHelpers.OrganizationTypeGuidDictionary.TryGetValue(key, out Guid organizationTypeGuid))
+            {
+                Spd_OrganizationType? orgType = _dynaContext.Spd_OrganizationTypeSet
+                    .Where(o => o.Spd_OrganizationTypeId == organizationTypeGuid)
+                    .FirstOrDefault();
+
+                if (orgType != null)
+                    orgregistration.Spd_OrganizationTypeId = orgType.ToEntityReference();
+            }
+
+            _dynaContext.UpdateObject(orgregistration);
+            _dynaContext.SaveChanges();
+
+            Spd_OrgRegistration? orgReg = _dynaContext.Spd_OrgRegistrationSet.Where(o => o.Spd_OrgRegistrationId == orgregistration.Spd_OrgRegistrationId).FirstOrDefault();
             if (orgReg != null)
-                orgReg.spd_preregistrationlink = $"{createRegistrationCmd.HostUrl}org-registration/registration/{orgReg.spd_registrationnumber}";
-            _dynaContext.UpdateObject(orgReg);
-            await _dynaContext.SaveChangesAsync(ct);
+            {
+                orgReg.Spd_PreregistrationLink = $"{createRegistrationCmd.HostUrl}org-registration/registration/{orgReg.Spd_RegistrationNumber}";
+                _dynaContext.UpdateObject(orgReg);
+                _dynaContext.SaveChanges();
+            }
+
             return true;
         }
 
@@ -77,30 +91,21 @@ namespace Spd.Resource.Repository.Registration
             {
                 key = $"{searchQry.RegistrationTypeCode}-{searchQry.VolunteerOrganizationTypeCode}";
             }
-            DynamicsContextLookupHelpers.OrganizationTypeGuidDictionary.TryGetValue(key, out Guid typeGuid);
 
-            if (String.IsNullOrEmpty(searchQry.GenericEmail))
-            {
-                // Do not check using email if there is no value
-                var orgReg = _dynaContext.spd_orgregistrations.Expand(o => o.spd_OrganizationTypeId).Where(o =>
-                    o.spd_organizationname == searchQry.OrganizationName &&
-                    o.spd_postalcode == searchQry.MailingPostalCode &&
-                    o.spd_OrganizationTypeId.spd_organizationtypeid == typeGuid &&
-                    o.statecode != DynamicsConstants.StateCode_Inactive
-                ).FirstOrDefault();
-                return orgReg != null;
-            }
-            else
-            {
-                var orgReg = _dynaContext.spd_orgregistrations.Expand(o => o.spd_OrganizationTypeId).Where(o =>
-                    o.spd_organizationname == searchQry.OrganizationName &&
-                    o.spd_postalcode == searchQry.MailingPostalCode &&
-                    o.spd_email == searchQry.GenericEmail &&
-                    o.spd_OrganizationTypeId.spd_organizationtypeid == typeGuid &&
-                    o.statecode != DynamicsConstants.StateCode_Inactive
-                ).FirstOrDefault();
-                return orgReg != null;
-            }
+            if (!DynamicsContextLookupHelpers.OrganizationTypeGuidDictionary.TryGetValue(key, out Guid typeGuid))
+                return false;
+
+            IQueryable<Spd_OrgRegistration> orgRegs = _dynaContext.Spd_OrgRegistrationSet
+                .Where(o => o.Spd_OrganizationName == searchQry.OrganizationName)
+                .Where(o => o.Spd_PostalCode == searchQry.MailingPostalCode)
+                .Where(o => o.StateCode != Spd_OrgRegistration_StateCode.Inactive)
+                .Where(o => o.Spd_OrganizationTypeId != null && o.Spd_OrganizationTypeId.Id == typeGuid);
+
+            if (!String.IsNullOrEmpty(searchQry.GenericEmail))
+                orgRegs = orgRegs.Where(o => o.Spd_Email == searchQry.GenericEmail);
+
+            Spd_OrgRegistration? orgReg = orgRegs.FirstOrDefault();
+            return orgReg != null;
         }
     }
 }

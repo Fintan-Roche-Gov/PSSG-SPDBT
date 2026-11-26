@@ -440,7 +440,7 @@ internal class SecurityWorkerAppManager :
                 Subject = $"Peace Officer Update on  {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingContactId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Client_Service_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Client_Service_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct)).TaskId;
         }
@@ -457,7 +457,7 @@ internal class SecurityWorkerAppManager :
                 Subject = $"Mental Health Condition Update on {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingContactId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct)).TaskId;
         }
@@ -473,7 +473,7 @@ internal class SecurityWorkerAppManager :
                 Subject = $"Criminal Charges or New Conviction Update on {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.High,
                 RegardingContactId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct)).TaskId;
         }

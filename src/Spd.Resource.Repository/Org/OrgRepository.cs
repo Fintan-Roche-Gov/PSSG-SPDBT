@@ -1,10 +1,9 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OData.Client;
 using Spd.Resource.Repository.Registration;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
 
@@ -12,12 +11,12 @@ namespace Spd.Resource.Repository.Org
 {
     internal class OrgRepository : IOrgRepository
     {
-        private readonly DynamicsContext _dynaContext;
+        private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _dynaContext;
         private readonly IMapper _mapper;
 
-        public OrgRepository(IDynamicsContextFactory ctx, IMapper mapper, ILogger<OrgRepository> logger)
+        public OrgRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx, IMapper mapper, ILogger<OrgRepository> logger)
         {
-            _dynaContext = ctx.CreateChangeOverwrite();
+            _dynaContext = ctx;
             _mapper = mapper;
         }
 
@@ -43,8 +42,7 @@ namespace Spd.Resource.Repository.Org
 
         private async Task<OrgManageResult?> OrgUpdateAsync(OrgUpdateCmd updateOrgCmd, CancellationToken ct)
         {
-            DataServiceCollection<account> orgs = new(_dynaContext.accounts.Where(p => p.accountid == updateOrgCmd.Org.Id));
-            account? org = orgs.Any() ? orgs[0] : null;
+            Account? org = _dynaContext.AccountSet.Where(p => p.AccountId == updateOrgCmd.Org.Id).FirstOrDefault();
             if (org == null)
             {
                 throw new ApiException(HttpStatusCode.BadRequest, $"Cannot find the updating org with orgId = {updateOrgCmd.Org.Id}");
@@ -72,24 +70,24 @@ namespace Spd.Resource.Repository.Org
             }
 
             _mapper.Map(updateOrgCmd.Org, org);
-            await _dynaContext.SaveChangesAsync(ct);
+            _dynaContext.SaveChanges();
 
             return new OrgManageResult(_mapper.Map<OrgResult>(org));
         }
 
         private async Task<OrgManageResult?> OrgGuidUpdateAsync(OrgGuidUpdateCmd updateOrgGuidCmd, CancellationToken ct)
         {
-            var org = await _dynaContext.GetOrgById(updateOrgGuidCmd.OrgId, ct);
+            Account? org = _dynaContext.AccountSet.Where(a => a.AccountId == updateOrgGuidCmd.OrgId).FirstOrDefault();
             if (org == null)
                 throw new ApiException(HttpStatusCode.BadRequest, "Cannot find the organization.");
 
             if (updateOrgGuidCmd.OrgGuid != null)
             {
-                if (org.spd_orgguid == null)
+                if (org.Spd_OrgGuid == null)
                 {
-                    org.spd_orgguid = updateOrgGuidCmd.OrgGuid;
+                    org.Spd_OrgGuid = updateOrgGuidCmd.OrgGuid;
                     _dynaContext.UpdateObject(org);
-                    await _dynaContext.SaveChangesAsync(ct);
+                    _dynaContext.SaveChanges();
                 }
             }
             return new OrgManageResult(_mapper.Map<OrgResult>(org));
@@ -97,6 +95,8 @@ namespace Spd.Resource.Repository.Org
 
         public async Task<bool> CheckDuplicateAsync(SearchOrgQry searchQry, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             string key;
             if (searchQry.RegistrationTypeCode == RegistrationTypeCode.MDRA)
             {
@@ -110,27 +110,27 @@ namespace Spd.Resource.Repository.Org
             {
                 key = $"{searchQry.RegistrationTypeCode}-{searchQry.VolunteerOrganizationTypeCode}";
             }
-            DynamicsContextLookupHelpers.OrganizationTypeGuidDictionary.TryGetValue(key, out Guid typeGuid);
+            Spd.Utilities.Dataverse.DynamicsContextLookupHelpers.OrganizationTypeGuidDictionary.TryGetValue(key, out Guid typeGuid);
 
             if (string.IsNullOrEmpty(searchQry.GenericEmail))
             {
-                var org = _dynaContext.accounts.Expand(o => o.spd_OrganizationTypeId).Where(a =>
-                    a.name == searchQry.OrganizationName &&
-                    a.address1_postalcode == searchQry.MailingPostalCode &&
-                    a.spd_OrganizationTypeId.spd_organizationtypeid == typeGuid &&
-                    a.statecode != DynamicsConstants.StateCode_Inactive
+                Account? org = _dynaContext.AccountSet.Where(a =>
+                    a.Name == searchQry.OrganizationName &&
+                    a.Address1_PostalCode == searchQry.MailingPostalCode &&
+                    a.Spd_OrganizationTypeId != null && a.Spd_OrganizationTypeId.Id == typeGuid &&
+                    a.StateCode != Account_StateCode.Inactive
                 ).FirstOrDefault();
                 return org != null;
             }
             else
             {
                 // use email in the check
-                var org = _dynaContext.accounts.Expand(o => o.spd_OrganizationTypeId).Where(a =>
-                    a.name == searchQry.OrganizationName &&
-                    a.address1_postalcode == searchQry.MailingPostalCode &&
-                    a.emailaddress1 == searchQry.GenericEmail &&
-                    a.spd_OrganizationTypeId.spd_organizationtypeid == typeGuid &&
-                    a.statecode != DynamicsConstants.StateCode_Inactive
+                Account? org = _dynaContext.AccountSet.Where(a =>
+                    a.Name == searchQry.OrganizationName &&
+                    a.Address1_PostalCode == searchQry.MailingPostalCode &&
+                    a.EmailAddress1 == searchQry.GenericEmail &&
+                    a.Spd_OrganizationTypeId != null && a.Spd_OrganizationTypeId.Id == typeGuid &&
+                    a.StateCode != Account_StateCode.Inactive
                 ).FirstOrDefault();
                 return org != null;
             }
@@ -138,53 +138,63 @@ namespace Spd.Resource.Repository.Org
 
         private async Task<OrgsQryResult> GetOrgsAsync(OrgsQry query, CancellationToken ct)
         {
-            IQueryable<account> accounts = _dynaContext.accounts.Expand(a => a.spd_account_spd_servicetype);
+            ct.ThrowIfCancellationRequested();
+
+            IQueryable<Account> accounts = _dynaContext.AccountSet;
             if (!query.IncludeInactive)
-                accounts = accounts.Where(a => a.statecode != DynamicsConstants.StateCode_Inactive);
+                accounts = accounts.Where(a => a.StateCode != Account_StateCode.Inactive);
             if (query.OrgGuid != null)
-                accounts = accounts.Where(a => a.spd_orgguid == query.OrgGuid.ToString());
+                accounts = accounts.Where(a => a.Spd_OrgGuid == query.OrgGuid.ToString());
             if (query.ParentOrgId != null)
-                accounts = accounts.Where(a => a._parentaccountid_value == query.ParentOrgId);
+                accounts = accounts.Where(a => a.ParentAccountId != null && a.ParentAccountId.Id == query.ParentOrgId);
             if (query.OrgCode != null)
-                accounts = accounts.Where(a => a.spd_orgcode == query.OrgCode);
+                accounts = accounts.Where(a => a.Spd_OrgCode == query.OrgCode);
             if (query.IsAccreditSchool != null)
-                accounts = accounts.Where(a => a.spd_accreditedschool == (int)(query.IsAccreditSchool.Value ? YesNoOptionSet.Yes : YesNoOptionSet.No));
+                accounts = accounts.Where(a => a.Spd_AccreditedSchool == (query.IsAccreditSchool.Value ? Spd_YesNo.Yes : Spd_YesNo.No));
+
+            List<Account> accountList = accounts.ToList();
+
+            foreach (var account in accountList)
+            {
+                ct.ThrowIfCancellationRequested();
+                _dynaContext.LoadProperty(account, nameof(Account.Spd_Account_Spd_ServiceType));
+            }
+
             if (query.ServiceTypes != null && query.ServiceTypes.Any())
             {
-                IEnumerable<Guid> stIds = query.ServiceTypes.Select(t => DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.GetValueOrDefault(t.ToString()));
-                var accountsList = (await accounts
-                    .GetAllPagesAsync(ct))
-                    .Where(a => stIds.Any(t => a.spd_account_spd_servicetype.Any(st => st.spd_servicetypeid == t)))
+                IEnumerable<Guid> stIds = query.ServiceTypes.Select(t => Spd.Utilities.Dataverse.DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.GetValueOrDefault(t.ToString()));
+                var accountsList = accountList
+                    .Where(a => stIds.Any(t => a.Spd_Account_Spd_ServiceType.Any(st => st.Spd_ServiceTypeId == t)))
                     .ToList();
                 return new OrgsQryResult(_mapper.Map<IEnumerable<OrgResult>>(accountsList));
             }
 
-            return new OrgsQryResult(_mapper.Map<IEnumerable<OrgResult>>(accounts.ToList()));
+            return new OrgsQryResult(_mapper.Map<IEnumerable<OrgResult>>(accountList));
         }
 
         private async Task<OrgQryData?> GetOrgByIdentifierAsync(OrgByIdentifierQry query, CancellationToken ct)
         {
-            IQueryable<account> accounts = _dynaContext.accounts.Where(a => a.statecode != DynamicsConstants.StateCode_Inactive);
+            ct.ThrowIfCancellationRequested();
+
+            IQueryable<Account> accounts = _dynaContext.AccountSet.Where(a => a.StateCode != Account_StateCode.Inactive);
 
             if (query.OrgId != null)
-                accounts = accounts.Where(a => a.accountid == query.OrgId);
+                accounts = accounts.Where(a => a.AccountId == query.OrgId);
             if (query.AccessCode != null)
-                accounts = accounts.Where(a => a.spd_accesscode == query.AccessCode);
+                accounts = accounts.Where(a => a.Spd_AccessCode == query.AccessCode);
 
-            account? org = await accounts.FirstOrDefaultAsync(ct);
+            Account? org = accounts.FirstOrDefault();
 
             if (org == null) throw new ApiException(HttpStatusCode.BadRequest, $"Cannot find org for {query.OrgId.ToString() ?? query.AccessCode}");
 
-            //tried with org expand, does not work. so have to make another call.
-            List<spd_account_spd_servicetype> serviceTypes = _dynaContext.spd_account_spd_servicetypeset
-                .Where(so => so.accountid == org.accountid)
-                .ToList();
+            _dynaContext.LoadProperty(org, nameof(Account.Spd_Account_Spd_ServiceType));
+            var serviceTypes = org.Spd_Account_Spd_ServiceType.ToList();
 
             if (!serviceTypes.Any())
-                throw new ApiException(HttpStatusCode.InternalServerError, $"organization {org.name} does not have service type.");
+                throw new ApiException(HttpStatusCode.InternalServerError, $"organization {org.Name} does not have service type.");
 
             var response = _mapper.Map<OrgResult>(org);
-            response.ServiceTypes = serviceTypes.Select(s => Enum.Parse<ServiceTypeEnum>(DynamicsContextLookupHelpers.GetServiceTypeName(s.spd_servicetypeid)));
+            response.ServiceTypes = serviceTypes.Select(s => Enum.Parse<ServiceTypeEnum>(Spd.Utilities.Dataverse.DynamicsContextLookupHelpers.GetServiceTypeName(s.Spd_ServiceTypeId)));
             return new OrgQryResult(response);
         }
     }

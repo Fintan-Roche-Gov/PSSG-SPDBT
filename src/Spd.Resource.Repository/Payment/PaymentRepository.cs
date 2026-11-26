@@ -1,34 +1,34 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using DataverseContext = Spd.Utilities.Dataverse.EarlyBound.DataverseContext;
 
 namespace Spd.Resource.Repository.Payment;
 internal class PaymentRepository : IPaymentRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly DataverseContext _context;
     private readonly IMapper _mapper;
-    public PaymentRepository(IDynamicsContextFactory ctx,
+    public PaymentRepository(IDataverseContextFactory ctx,
         IMapper mapper)
     {
-        _context = ctx.Create();
+        _context = ctx.CreateChangeOverwrite();
         _mapper = mapper;
     }
     public async Task<PaymentListResp> QueryAsync(PaymentQry qry, CancellationToken ct)
     {
-        var payments = _context.spd_payments
-            .Expand(p => p.spd_ApplicationId);
+        IQueryable<Spd_Payment> payments = _context.Spd_PaymentSet;
 
         if (qry.ApplicationId != null)
-            payments = (DataServiceQuery<spd_payment>)payments.Where(d => d._spd_applicationid_value == qry.ApplicationId);
+            payments = payments.Where(d => d.Spd_ApplicationId != null && d.Spd_ApplicationId.Id == qry.ApplicationId);
 
         if (qry.PaymentId != null)
-            payments = (DataServiceQuery<spd_payment>)payments.Where(d => d.spd_paymentid == qry.PaymentId);
+            payments = payments.Where(d => d.Spd_PaymentId == qry.PaymentId);
 
-        var result = await payments.GetAllPagesAsync(ct);
-        result = result.OrderByDescending(a => a.createdon);
+        var result = payments.ToList();
+        result = result.OrderByDescending(a => a.CreatedOn).ToList();
         return new PaymentListResp
         {
             Items = _mapper.Map<IEnumerable<PaymentResp>>(result.ToList())
@@ -46,39 +46,39 @@ internal class PaymentRepository : IPaymentRepository
 
     private async Task<Guid> PaymentCreateAsync(CreatePaymentCmd cmd, CancellationToken ct)
     {
-        spd_application? application = await _context.GetApplicationById(cmd.ApplicationId, ct);
+        Spd_Application? application = _context.Spd_ApplicationSet.Where(a => a.Spd_ApplicationId == cmd.ApplicationId).FirstOrDefault();
         if (application == null)
             throw new ArgumentException("invalid application id");
 
-        spd_payment? payment = await _context.GetPaymentById(cmd.PaymentId, ct);
+        Spd_Payment? payment = _context.Spd_PaymentSet.Where(p => p.Spd_PaymentId == cmd.PaymentId).FirstOrDefault();
         if (payment != null)
         {
             //payment should not exist, so, should not get here.
-            if (payment.spd_ordernumber == cmd.TransOrderId)
+            if (payment.Spd_OrderNumber == cmd.TransOrderId)
                 return cmd.PaymentId; //payment already updated
             else
                 cmd.PaymentId = Guid.NewGuid();
         }
 
-        payment = _mapper.Map<spd_payment>(cmd);
-        _context.AddTospd_payments(payment);
-        _context.SetLink(payment, nameof(payment.spd_ApplicationId), application);
-        await _context.SaveChangesAsync(ct);
+        payment = _mapper.Map<Spd_Payment>(cmd);
+        _context.AddObject(payment);
+        payment.Spd_ApplicationId = application.ToEntityReference();
+        _context.SaveChanges();
         return cmd.PaymentId;
     }
 
     private async Task<Guid> PaymentUpdateAsync(UpdatePaymentCmd cmd, CancellationToken ct)
     {
-        spd_payment? payment = await _context.GetPaymentById(cmd.PaymentId, ct);
+        Spd_Payment? payment = _context.Spd_PaymentSet.Where(p => p.Spd_PaymentId == cmd.PaymentId).FirstOrDefault();
         if (payment == null) throw new ApiException(HttpStatusCode.BadRequest, "The payment does not exist.");
         payment = _mapper.Map(cmd, payment);
         if (cmd.PaymentStatus != null)
         {
-            payment.statuscode = (int)Enum.Parse<PaymentStatusCodeOptionSet>(cmd.PaymentStatus.ToString());
+            payment.StatusCode = (Spd_Payment_StatusCode?)(int)Enum.Parse<PaymentStatusCodeOptionSet>(cmd.PaymentStatus.ToString());
         }
         _context.UpdateObject(payment);
-        await _context.SaveChangesAsync(ct);
-        return (Guid)payment.spd_paymentid;
+        _context.SaveChanges();
+        return (Guid)payment.Spd_PaymentId;
     }
 
 }

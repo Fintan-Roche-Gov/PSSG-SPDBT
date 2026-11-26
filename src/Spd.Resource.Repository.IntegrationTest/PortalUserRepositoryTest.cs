@@ -248,8 +248,8 @@ public class PortalUserRepositoryTest : IClassFixture<IntegrationTestSetup>
         // Assert
         var deletedUser = await _context.GetUserById(createdUser.Id, CancellationToken.None);
         Assert.NotNull(deletedUser);
-        Assert.Equal(deletedUser.statecode, DynamicsConstants.StateCode_Inactive);
-        Assert.Equal(deletedUser.statuscode, DynamicsConstants.StatusCode_Inactive);
+        Assert.Equal(deletedUser.statecode, DataverseConstants.StateCode_Inactive);
+        Assert.Equal(deletedUser.statuscode, DataverseConstants.StatusCode_Inactive);
 
         // Annihilate
         spd_portaluser? updatedPortalUser = _context.spd_portalusers.Where(u => u.spd_portaluserid == deletedUser.spd_portaluserid).FirstOrDefault();

@@ -186,11 +186,11 @@ public class BizRepositoryTest : IClassFixture<IntegrationTestSetup>
         spd_licence licence = new()
         {
             spd_licenceid = newLicenceId,
-            statecode = DynamicsConstants.StateCode_Active,
+            statecode = DataverseConstants.StateCode_Active,
             createdon = DateTime.Now
         };
         _context.AddTospd_licences(licence);
-        contact contact = new() { contactid = newLicHolderId, statecode = DynamicsConstants.StateCode_Active };
+        contact contact = new() { contactid = newLicHolderId, statecode = DataverseConstants.StateCode_Active };
         _context.AddTocontacts(contact);
         _context.SetLink(licence, nameof(licence.spd_LicenceHolder_contact), contact);
         await _context.SaveChangesAsync();

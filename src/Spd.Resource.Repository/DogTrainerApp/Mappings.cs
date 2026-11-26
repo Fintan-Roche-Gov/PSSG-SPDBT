@@ -18,7 +18,7 @@ internal class Mappings : Profile
         .ForMember(d => d.spd_emailaddress1, opt => opt.MapFrom(s => s.TrainerEmailAddress))
         .ForMember(d => d.spd_phonenumber, opt => opt.MapFrom(s => s.TrainerPhoneNumber))
         .ForMember(d => d.spd_origin, opt => opt.MapFrom(s => SharedMappingFuncs.GetOptionset<ApplicationOriginTypeEnum, ApplicationOriginOptionSet>(s.ApplicationOriginTypeCode)))
-        .ForMember(d => d.statecode, opt => opt.MapFrom(s => DynamicsConstants.StateCode_Active))
+        .ForMember(d => d.statecode, opt => opt.MapFrom(s => DataverseConstants.StateCode_Active))
         .ForMember(d => d.spd_addressline1, opt => opt.MapFrom(s => s.TrainerMailingAddress == null ? null : StringHelper.SanitizeEmpty(s.TrainerMailingAddress.AddressLine1)))
         .ForMember(d => d.spd_addressline2, opt => opt.MapFrom(s => s.TrainerMailingAddress == null ? null : StringHelper.SanitizeEmpty(s.TrainerMailingAddress.AddressLine2)))
         .ForMember(d => d.spd_city, opt => opt.MapFrom(s => s.TrainerMailingAddress == null ? null : StringHelper.SanitizeEmpty(s.TrainerMailingAddress.City)))

@@ -1,214 +1,324 @@
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.OData.Client;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using EbContact = global::Spd.Utilities.Dataverse.EarlyBound.Contact;
+using EbIncident = global::Spd.Utilities.Dataverse.EarlyBound.Incident;
+using Task = System.Threading.Tasks.Task;
 
 namespace Spd.Resource.Repository.Application;
 internal partial class ApplicationRepository : IApplicationRepository
 {
     public async Task<Guid?> AddApplicationAsync(ApplicationCreateCmd createApplicationCmd, CancellationToken ct)
     {
-        //create application
-        spd_application? application = null;
-        account? org = await _context.GetOrgById(createApplicationCmd.OrgId, ct);
+        Spd_Application? application = null;
+        Account? org = _context.AccountSet.Where(a => a.AccountId == createApplicationCmd.OrgId).FirstOrDefault();
         if (org == null)
         {
             throw new InvalidOperationException($"cannot find org for {createApplicationCmd.OrgId}");
         }
-        spd_portaluser? user = null;
+
+        Spd_PortalUser? user = null;
         if (createApplicationCmd.CreatedByUserId != Guid.Empty)
         {
-            user = await _context.GetUserById(createApplicationCmd.CreatedByUserId, ct);
+            user = _context.Spd_PortalUserSet.Where(u => u.Spd_PortalUserId == createApplicationCmd.CreatedByUserId).FirstOrDefault();
         }
-        Guid teamGuid = Guid.Parse(DynamicsConstants.Client_Service_Team_Guid);
-        team? serviceTeam = await _context.teams.Where(t => t.teamid == teamGuid).FirstOrDefaultAsync(ct);
-        spd_servicetype? servicetype = _context.LookupServiceType(createApplicationCmd.ServiceType.ToString());
-        account? parentOrg = null;
+
+        Team? serviceTeam = _context.TeamSet.Where(t => t.TeamId == Guid.Parse(DataverseConstants.Client_Service_Team_Guid)).FirstOrDefault();
+
+        Spd_ServiceType? servicetype = null;
+        if (createApplicationCmd.ServiceType != null)
+        {
+            Guid? serviceTypeGuid = DataverseContextLookupHelpers.GetServiceTypeGuid(createApplicationCmd.ServiceType.ToString());
+            if (serviceTypeGuid != null)
+            {
+                servicetype = _context.Spd_ServiceTypeSet.Where(s => s.Spd_ServiceTypeId == serviceTypeGuid).FirstOrDefault();
+            }
+        }
+
+        Account? parentOrg = null;
         if (createApplicationCmd.ParentOrgId != null)
         {
-            parentOrg = await _context.GetOrgById((Guid)createApplicationCmd.ParentOrgId, ct);
+            parentOrg = _context.AccountSet.Where(a => a.AccountId == createApplicationCmd.ParentOrgId).FirstOrDefault();
         }
-        if (org != null && serviceTeam != null)
-            application = await CreateAppAsync(createApplicationCmd, org, user, serviceTeam, servicetype, parentOrg);
-        await _context.SaveChangesAsync(ct);
 
-        return application?.spd_applicationid;
+        if (serviceTeam != null)
+        {
+            application = await CreateAppAsync(createApplicationCmd, org, user, serviceTeam, servicetype, parentOrg);
+            _context.SaveChanges();
+        }
+
+        return await Task.FromResult(application?.Spd_ApplicationId);
     }
 
     public async Task<ApplicationListResp> QueryAsync(ApplicationListQry query, CancellationToken cancellationToken)
     {
         if (query == null || (query.FilterBy?.OrgId == null && query.FilterBy?.ParentOrgId == null))
             throw new ArgumentNullException("query.FilterBy.OrgId", "Must query applications by organization id.");
-        string filterStr = GetAppFilterString(query.FilterBy);
-        string sortStr = GetAppSortString(query.SortBy);
-        var applications = _context.spd_applications
-            .AddQueryOption("$filter", $"{filterStr}")
-            .AddQueryOption("$orderby", $"{sortStr}")
-            .IncludeCount();
+
+        IQueryable<Spd_Application> applications = _context.Spd_ApplicationSet;
+
+        if (query.FilterBy?.OrgId != null)
+            applications = applications.Where(a => a.Spd_OrganizationId != null && a.Spd_OrganizationId.Id == query.FilterBy.OrgId);
+
+        if (query.FilterBy?.ParentOrgId != null)
+            applications = applications.Where(a => a.Spd_ParentOrganizationId != null && a.Spd_ParentOrganizationId.Id == query.FilterBy.ParentOrgId);
+
+        if (query.FilterBy?.ApplicationPortalStatus != null && query.FilterBy.ApplicationPortalStatus.Any())
+        {
+            var statuses = query.FilterBy.ApplicationPortalStatus.Select(s => Enum.Parse<Spd_PortalStatus>(s.ToString())).ToList();
+            applications = applications.Where(a => a.Spd_PortalStatus != null && statuses.Contains(a.Spd_PortalStatus.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.FilterBy?.NameOrEmailOrAppIdContains))
+        {
+            string search = query.FilterBy.NameOrEmailOrAppIdContains;
+            applications = applications.Where(a =>
+                (a.Spd_FirstName != null && a.Spd_FirstName.Contains(search)) ||
+                (a.Spd_LastName != null && a.Spd_LastName.Contains(search)) ||
+                (a.Spd_EmailAddress1 != null && a.Spd_EmailAddress1.Contains(search)) ||
+                (a.Spd_Name != null && a.Spd_Name.Contains(search)) ||
+                (a.Spd_FullName != null && a.Spd_FullName.Contains(search)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.FilterBy?.NameOrAppIdContains))
+        {
+            string search = query.FilterBy.NameOrAppIdContains;
+            applications = applications.Where(a =>
+                (a.Spd_FirstName != null && a.Spd_FirstName.Contains(search)) ||
+                (a.Spd_LastName != null && a.Spd_LastName.Contains(search)) ||
+                (a.Spd_Name != null && a.Spd_Name.Contains(search)) ||
+                (a.Spd_FullName != null && a.Spd_FullName.Contains(search)));
+        }
+
+        if (query.FilterBy?.Paid != null)
+        {
+            if (query.FilterBy.Paid.Value)
+                applications = applications.Where(a => a.Spd_PaidOn != null);
+            else
+                applications = applications.Where(a => a.StatusCode == Spd_Application_StatusCode.PaymentPending);
+        }
+
+        if (query.FilterBy?.PayerType != null)
+        {
+            var payer = Enum.Parse<Spd_PayerType>(query.FilterBy.PayerType.ToString());
+            applications = applications.Where(a => a.Spd_Payer == payer);
+        }
+
+        if (query.FilterBy?.FromDateTime != null)
+        {
+            DateTime from = query.FilterBy.FromDateTime.Value.UtcDateTime;
+            applications = applications.Where(a => a.CreatedOn >= from);
+        }
+
+        if (query.FilterBy?.ToDateTime != null)
+        {
+            DateTime to = query.FilterBy.ToDateTime.Value.AddDays(1).UtcDateTime;
+            applications = applications.Where(a => a.CreatedOn < to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.FilterBy?.DelegatePortalUserId))
+            applications = applications.Where(a => a.Spd_DelegateId == query.FilterBy.DelegatePortalUserId);
+
+        List<Guid?> serviceTypeGuid = IApplicationRepository.ScreeningServiceTypes.Select(c => DataverseContextLookupHelpers.GetServiceTypeGuid(c.ToString())).ToList();
+        applications = applications.Where(a => a.Spd_ServiceTypeId != null && serviceTypeGuid.Contains(a.Spd_ServiceTypeId.Id));
+
+        applications = query.SortBy switch
+        {
+            { SubmittedDateDesc: false } => applications.OrderBy(a => a.CreatedOn),
+            { NameDesc: true } => applications.OrderByDescending(a => a.Spd_FullName),
+            { NameDesc: false } => applications.OrderBy(a => a.Spd_FullName),
+            { CompanyNameDesc: true } => applications.OrderByDescending(a => a.Spd_ContractedCompanyName),
+            { CompanyNameDesc: false } => applications.OrderBy(a => a.Spd_ContractedCompanyName),
+            { PaidAndSubmittedOnDesc: true } => applications.OrderByDescending(a => a.Spd_PaidOn).ThenByDescending(a => a.CreatedOn),
+            _ => applications.OrderByDescending(a => a.CreatedOn)
+        };
+
+        List<Spd_Application> data = applications.ToList();
+        int total = data.Count;
 
         if (query.Paging != null)
         {
-            int skip = query.Paging.Page * query.Paging.PageSize;
-            applications = applications
-                .AddQueryOption("$skip", $"{skip}")
-                .AddQueryOption("$top", $"{query.Paging.PageSize}");
+            data = data.Skip(query.Paging.Page * query.Paging.PageSize)
+                       .Take(query.Paging.PageSize)
+                       .ToList();
         }
 
-        var result = (QueryOperationResponse<spd_application>)await applications.ExecuteAsync(cancellationToken);
+        var response = new ApplicationListResp
+        {
+            Applications = _mapper.Map<IEnumerable<ApplicationResult>>(data)
+        };
 
-        var response = new ApplicationListResp();
-        response.Applications = _mapper.Map<IEnumerable<ApplicationResult>>(result);
         if (query.Paging != null)
         {
-            response.Pagination = new PaginationResp();
-            response.Pagination.PageSize = query.Paging.PageSize;
-            response.Pagination.PageIndex = query.Paging.Page;
-            response.Pagination.Length = (int)result.Count;
+            response.Pagination = new PaginationResp
+            {
+                PageSize = query.Paging.PageSize,
+                PageIndex = query.Paging.Page,
+                Length = total
+            };
         }
 
-        return response;
+        return await Task.FromResult(response);
     }
 
     public async Task UpdateAsync(UpdateCmd cmd, CancellationToken ct)
     {
-        spd_application? app = await _context.GetApplicationById(cmd.ApplicationId, ct);
+        Spd_Application? app = _context.Spd_ApplicationSet.Where(a => a.Spd_ApplicationId == cmd.ApplicationId).FirstOrDefault();
         if (app == null)
             throw new ApiException(HttpStatusCode.BadRequest, "Invalid ApplicationId");
 
         if (cmd.Status != null)
         {
-            app.statuscode = (int)Enum.Parse<ApplicationStatusOptionSet>(cmd.Status.ToString());
+            app.StatusCode = Enum.Parse<Spd_Application_StatusCode>(cmd.Status.ToString());
             if (cmd.Status == ApplicationStatusEnum.Submitted || cmd.Status == ApplicationStatusEnum.Cancelled)
-                app.statecode = DynamicsConstants.StateCode_Inactive;
+                app.StateCode = Spd_Application_StateCode.Inactive;
             else
-                app.statecode = DynamicsConstants.StateCode_Active;
+                app.StateCode = Spd_Application_StateCode.Active;
         }
         if (cmd.HaveVerifiedIdentity != null)
         {
-            app.spd_identityconfirmed = cmd.HaveVerifiedIdentity;
+            app.Spd_IdentityConfirmed = cmd.HaveVerifiedIdentity;
         }
+
         _context.UpdateObject(app);
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
+        return;
     }
 
     public async Task<bool> CheckApplicationDuplicateAsync(SearchApplicationQry searchApplicationQry, CancellationToken ct)
     {
-        var application = await _context.spd_applications.Where(o =>
-            o.spd_OrganizationId.accountid == searchApplicationQry.OrgId &&
-            o.spd_firstname == searchApplicationQry.GivenName &&
-            o.spd_lastname == searchApplicationQry.Surname &&
-            o.spd_dateofbirth == new Microsoft.OData.Edm.Date(searchApplicationQry.DateOfBirth.Value.Year, searchApplicationQry.DateOfBirth.Value.Month, searchApplicationQry.DateOfBirth.Value.Day) &&
-            o.statecode != DynamicsConstants.StateCode_Inactive
-        ).FirstOrDefaultAsync(ct);
-        return application != null;
+        DateTime? dob = searchApplicationQry.DateOfBirth.HasValue
+            ? new DateTime(searchApplicationQry.DateOfBirth.Value.Year, searchApplicationQry.DateOfBirth.Value.Month, searchApplicationQry.DateOfBirth.Value.Day)
+            : null;
+
+        var application = _context.Spd_ApplicationSet.Where(o =>
+            o.Spd_OrganizationId != null && o.Spd_OrganizationId.Id == searchApplicationQry.OrgId &&
+            o.Spd_FirstName == searchApplicationQry.GivenName &&
+            o.Spd_LastName == searchApplicationQry.Surname &&
+            o.Spd_DateOfBirth == dob &&
+            o.StateCode != Spd_Application_StateCode.Inactive
+        ).FirstOrDefault();
+
+        return await Task.FromResult(application != null);
     }
 
     public async Task<ApplicantApplicationListResp> QueryApplicantApplicationListAsync(ApplicantApplicationListQry query, CancellationToken cancellationToken)
     {
         _logger.LogDebug($"query applicant application with applicantId={query.ApplicantId}");
-        var applications = _context.spd_applications
-            .Expand(i => i.spd_ServiceTypeId)
-            .Expand(i => i.spd_OrganizationId)
-            .Where(r => r._spd_applicantid_value == query.ApplicantId)
-            .OrderByDescending(i => i.createdon);
 
-        List<Guid?> serviceTypeGuid = IApplicationRepository.ScreeningServiceTypes.Select(c => DynamicsContextLookupHelpers.GetServiceTypeGuid(c.ToString())).ToList();
+        var applications = _context.Spd_ApplicationSet
+            .Where(r => r.Spd_ApplicantId != null && r.Spd_ApplicantId.Id == query.ApplicantId)
+            .OrderByDescending(i => i.CreatedOn);
 
-        var result = applications.ToList().Where(a => serviceTypeGuid.Contains(a._spd_servicetypeid_value));
+        List<Guid?> serviceTypeGuid = IApplicationRepository.ScreeningServiceTypes.Select(c => DataverseContextLookupHelpers.GetServiceTypeGuid(c.ToString())).ToList();
+
+        var result = applications.ToList().Where(a => a.Spd_ServiceTypeId != null && serviceTypeGuid.Contains(a.Spd_ServiceTypeId.Id));
         var response = new ApplicantApplicationListResp();
         response.Applications = _mapper.Map<IEnumerable<ApplicationResult>>(result);
-        return response;
+        return await Task.FromResult(response);
     }
 
     public async Task<ApplicationResult> QueryApplicationAsync(ApplicationQry query, CancellationToken ct)
     {
-        var application = await _context.spd_applications
-            .Expand(i => i.spd_OrganizationId)
-            .Expand(i => i.spd_ApplicantId_contact)
-            .Where(r => r.spd_applicationid == query.ApplicationId)
-            .FirstOrDefaultAsync(ct);
-        return _mapper.Map<ApplicationResult>(application);
+        var application = _context.Spd_ApplicationSet
+            .Where(r => r.Spd_ApplicationId == query.ApplicationId)
+            .FirstOrDefault();
+
+        return await Task.FromResult(_mapper.Map<ApplicationResult>(application));
     }
 
     public async Task ProcessAppWithSharableClearanceAsync(ApplicationCreateCmd createApplicationCmd, CancellationToken ct)
     {
         if (!createApplicationCmd.SharedClearanceId.HasValue)
             throw new ArgumentException("SharedClearanceId cannot be null");
-        account? org = await _context.GetOrgById(createApplicationCmd.OrgId, ct);
-        contact? contact = await _context.contacts.Where(c => c.contactid == createApplicationCmd.ContactId).FirstOrDefaultAsync(ct);
-        _mapper.Map<ApplicationCreateCmd, contact>(createApplicationCmd, contact);
+
+        Account? org = _context.AccountSet.Where(a => a.AccountId == createApplicationCmd.OrgId).FirstOrDefault();
+        if (org == null)
+            throw new ApiException(HttpStatusCode.BadRequest, "Cannot find organization.");
+
+        EbContact? contact = _context.ContactSet.Where(c => c.ContactId == createApplicationCmd.ContactId).FirstOrDefault();
+        if (contact == null)
+            throw new ApiException(HttpStatusCode.BadRequest, "Cannot find contact.");
+
+        _mapper.Map<ApplicationCreateCmd, EbContact>(createApplicationCmd, contact);
         _context.UpdateObject(contact);
 
-        //spdbt-3220
-        spd_clearance? clearance = await _context.spd_clearances
-            .Expand(c => c.spd_CaseID)
-            .Where(c => c.spd_clearanceid == (Guid)createApplicationCmd.SharedClearanceId)
-            .FirstOrDefaultAsync(ct);
+        Spd_Clearance? clearance = _context.Spd_ClearanceSet
+            .Where(c => c.Spd_ClearanceId == createApplicationCmd.SharedClearanceId)
+            .FirstOrDefault();
         if (clearance == null)
             throw new ApiException(HttpStatusCode.BadRequest, "Cannot find specified clearance.");
-        team? team = null;
-        int state;
-        int status;
-        if (clearance.spd_CaseID.spd_risklevel == (int)CaseRiskLevelOptionSet.L2 || clearance.spd_CaseID.spd_risklevel == (int)CaseRiskLevelOptionSet.L3)
+
+        EbIncident? caseIncident = null;
+        if (clearance.Spd_CaseId != null)
         {
-            Guid teamGuid = Guid.Parse(DynamicsConstants.Screening_Risk_Assessment_Coordinator_Team_Guid);
-            team = await _context.teams.Where(t => t.teamid == teamGuid).FirstOrDefaultAsync(ct);
-            status = (int)ClearanceAccessStatusOptionSet.Draft;
-            state = DynamicsConstants.StateCode_Active;
+            caseIncident = _context.IncidentSet.Where(i => i.IncidentId == clearance.Spd_CaseId.Id).FirstOrDefault();
+        }
+
+        Team? team;
+        Spd_ClearanceAccess_StatusCode status;
+        if (caseIncident?.Spd_RiskLevel == Spd_RiskLevel.L2 || caseIncident?.Spd_RiskLevel == Spd_RiskLevel.L3)
+        {
+            Guid teamGuid = Guid.Parse(DataverseConstants.Screening_Risk_Assessment_Coordinator_Team_Guid);
+            team = _context.TeamSet.Where(t => t.TeamId == teamGuid).FirstOrDefault();
+            status = Spd_ClearanceAccess_StatusCode.Draft;
         }
         else
         {
-            Guid teamGuid = Guid.Parse(DynamicsConstants.Client_Service_Team_Guid);
-            team = await _context.teams.Where(t => t.teamid == teamGuid).FirstOrDefaultAsync(ct);
-            status = (int)ClearanceAccessStatusOptionSet.Approved;
-            state = DynamicsConstants.StateCode_Active;
+            Guid teamGuid = Guid.Parse(DataverseConstants.Client_Service_Team_Guid);
+            team = _context.TeamSet.Where(t => t.TeamId == teamGuid).FirstOrDefault();
+            status = Spd_ClearanceAccess_StatusCode.Approved;
         }
 
-        spd_clearanceaccess clearanceaccess = new() { spd_clearanceaccessid = Guid.NewGuid() };
-        clearanceaccess.statecode = state;
-        clearanceaccess.statuscode = status;
-        clearanceaccess.spd_issystemgenerated = true;
-        _context.AddTospd_clearanceaccesses(clearanceaccess);
-        _context.SetLink(clearanceaccess, nameof(clearanceaccess.spd_OrganizationId), org);
-        _context.SetLink(clearanceaccess, nameof(clearanceaccess.spd_ClearanceId), clearance);
-        _context.SetLink(clearanceaccess, nameof(clearanceaccess.owningteam), team);
-        _context.SetLink(clearanceaccess, nameof(clearanceaccess.ownerid), team);
-        await _context.SaveChangesAsync(ct);
+        if (team == null)
+            throw new ApiException(HttpStatusCode.BadRequest, "Cannot find team.");
 
-        spd_clearanceaccess? clearAccess = await _context.GetClearanceAccessById((Guid)clearanceaccess.spd_clearanceaccessid, ct);
-        if (clearAccess == null) throw new ApiException(HttpStatusCode.InternalServerError, "cannot find clearance access.");
-        var result = await clearAccess.spd_ClearanceAccessNotification().GetValueAsync(ct);
-        if (result.IsSuccess != true)
+        Spd_ClearanceAccess clearanceAccess = new()
         {
-            ClearanceAccessResp log = _mapper.Map<ClearanceAccessResp>(clearAccess);
-            _logger.LogError("ClearanceAccessNotification failed with error {Error} for clearance access = {log}", result.Result, log);
-        }
+            Spd_ClearanceAccessId = Guid.NewGuid(),
+            StateCode = Spd_ClearanceAccess_StateCode.Active,
+            StatusCode = status,
+            Spd_IsSystemGenerated = true,
+            Spd_OrganizationId = org.ToEntityReference(),
+            Spd_ClearanceId = clearance.ToEntityReference(),
+            OwnerId = team.ToEntityReference()
+        };
+
+        _context.AddObject(clearanceAccess);
+        _context.SaveChanges();
+
+        return;
     }
 
-    private spd_alias? GetAlias(AliasCreateCmd aliasCreateCmd, contact contact)
+    private Spd_Alias? GetAlias(AliasCreateCmd aliasCreateCmd, EbContact contact)
     {
-        var matchingAlias = _context.spd_aliases.Where(o =>
-           o.spd_firstname == aliasCreateCmd.GivenName &&
-           o.spd_middlename1 == aliasCreateCmd.MiddleName1 &&
-           o.spd_middlename2 == aliasCreateCmd.MiddleName2 &&
-           o.spd_surname == aliasCreateCmd.Surname &&
-           o.statecode != DynamicsConstants.StateCode_Inactive &&
-           o._spd_contactid_value == contact.contactid
+        var matchingAlias = _context.Spd_AliasSet.Where(o =>
+           o.Spd_FirstName == aliasCreateCmd.GivenName &&
+           o.Spd_MiddleName1 == aliasCreateCmd.MiddleName1 &&
+           o.Spd_MiddleName2 == aliasCreateCmd.MiddleName2 &&
+           o.Spd_Surname == aliasCreateCmd.Surname &&
+           o.StateCode != Spd_Alias_StateCode.Inactive &&
+           o.Spd_ContactId != null && o.Spd_ContactId.Id == contact.ContactId
        ).FirstOrDefault();
         return matchingAlias;
     }
 
-    private contact? GetContact(ApplicationCreateCmd createApplicationCmd)
+    private EbContact? GetContact(ApplicationCreateCmd createApplicationCmd)
     {
-        var contacts = _context.contacts
+        DateTime? dob = createApplicationCmd.DateOfBirth.HasValue
+            ? new DateTime(createApplicationCmd.DateOfBirth.Value.Year, createApplicationCmd.DateOfBirth.Value.Month, createApplicationCmd.DateOfBirth.Value.Day)
+            : null;
+
+        var contacts = _context.ContactSet
             .Where(o =>
-            o.firstname == createApplicationCmd.GivenName &&
-            o.lastname == createApplicationCmd.Surname &&
-            o.birthdate == new Microsoft.OData.Edm.Date(createApplicationCmd.DateOfBirth.Value.Year, createApplicationCmd.DateOfBirth.Value.Month, createApplicationCmd.DateOfBirth.Value.Day) &&
-            o.statecode != DynamicsConstants.StateCode_Inactive);
+            o.FirstName == createApplicationCmd.GivenName &&
+            o.LastName == createApplicationCmd.Surname &&
+            o.Birthdate == dob &&
+            o.StateCode != Contact_StateCode.Inactive);
 
         if (createApplicationCmd.DriversLicense == null || string.IsNullOrEmpty(createApplicationCmd.DriversLicense))
         {
@@ -217,7 +327,7 @@ internal partial class ApplicationRepository : IApplicationRepository
         else
         {
             contacts = contacts
-            .Where(o => o.spd_bcdriverslicense == null || o.spd_bcdriverslicense == createApplicationCmd.DriversLicense);
+            .Where(o => o.Spd_BcDriversLicense == null || o.Spd_BcDriversLicense == createApplicationCmd.DriversLicense);
             return contacts.FirstOrDefault();
         }
     }
@@ -305,13 +415,13 @@ internal partial class ApplicationRepository : IApplicationRepository
             delegateFilters = $"spd_delegateid eq '{appFilterBy.DelegatePortalUserId}'";
         }
 
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_EMPLOYEE.ToString(), out Guid crrpEmployeeServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_VOLUNTEER.ToString(), out Guid crrpVolunteerServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PSSO.ToString(), out Guid pssoServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PSSO_VS.ToString(), out Guid pssoVsServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.MCFD.ToString(), out Guid mcfdServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PE_CRC.ToString(), out Guid pecrcServiceTypeId);
-        DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PE_CRC_VS.ToString(), out Guid pecrcvsServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_EMPLOYEE.ToString(), out Guid crrpEmployeeServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.CRRP_VOLUNTEER.ToString(), out Guid crrpVolunteerServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PSSO.ToString(), out Guid pssoServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PSSO_VS.ToString(), out Guid pssoVsServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.MCFD.ToString(), out Guid mcfdServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PE_CRC.ToString(), out Guid pecrcServiceTypeId);
+        DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(ServiceTypeEnum.PE_CRC_VS.ToString(), out Guid pecrcvsServiceTypeId);
         string? serviceTypeFilters = $"_spd_servicetypeid_value eq '{crrpEmployeeServiceTypeId}' or _spd_servicetypeid_value eq '{crrpVolunteerServiceTypeId}' or _spd_servicetypeid_value eq '{pssoServiceTypeId}' or _spd_servicetypeid_value eq '{pssoVsServiceTypeId}' or _spd_servicetypeid_value eq '{mcfdServiceTypeId}' or _spd_servicetypeid_value eq '{pecrcServiceTypeId}' or _spd_servicetypeid_value eq '{pecrcvsServiceTypeId}'";
 
         //get result filter string
@@ -392,132 +502,137 @@ internal partial class ApplicationRepository : IApplicationRepository
     }
 
     //note: any change in this function, the operation number also needs to change in AddBulkAppsAsync
-    private async Task<spd_application> CreateAppAsync(
+    private async Task<Spd_Application> CreateAppAsync(
         ApplicationCreateCmd createApplicationCmd,
-        account org,
-        spd_portaluser? user,
-        team team,
-        spd_servicetype? serviceType,
-        account? parentOrg = null)
+        Account org,
+        Spd_PortalUser? user,
+        Team team,
+        Spd_ServiceType? serviceType,
+        Account? parentOrg = null)
     {
-        spd_application app = _mapper.Map<spd_application>(createApplicationCmd);
+        Spd_Application app = new Spd_Application
+        {
+            Spd_ApplicationId = Guid.NewGuid(),
+            Spd_OrganizationId = org.ToEntityReference(),
+            Spd_SubmittedBy = user?.ToEntityReference(),
+            OwnerId = team.ToEntityReference(),
+            Spd_ServiceTypeId = serviceType?.ToEntityReference(),
+            Spd_ParentOrganizationId = parentOrg?.ToEntityReference(),
+            Spd_FirstName = createApplicationCmd.GivenName,
+            Spd_MiddleName1 = createApplicationCmd.MiddleName1,
+            Spd_MiddleName2 = createApplicationCmd.MiddleName2,
+            Spd_LastName = createApplicationCmd.Surname,
+            Spd_EmailAddress1 = createApplicationCmd.EmailAddress,
+            Spd_EmployeeId = createApplicationCmd.EmployeeId,
+            Spd_UploadId = createApplicationCmd.UploadId,
+            Spd_DateOfBirth = createApplicationCmd.DateOfBirth.HasValue ? new DateTime(createApplicationCmd.DateOfBirth.Value.Year, createApplicationCmd.DateOfBirth.Value.Month, createApplicationCmd.DateOfBirth.Value.Day) : null,
+            StateCode = Spd_Application_StateCode.Active,
+            StatusCode = createApplicationCmd.HaveVerifiedIdentity == true ? Spd_Application_StatusCode.PaymentPending : Spd_Application_StatusCode.ApplicantVerification,
+            Spd_IdentityConfirmed = createApplicationCmd.HaveVerifiedIdentity
+        };
 
-        _context.AddTospd_applications(app);
-        _context.SetLink(app, nameof(spd_application.spd_OrganizationId), org);
-        if (user != null)
-        {
-            _context.SetLink(app, nameof(spd_application.spd_SubmittedBy), user);
-        }
-        _context.SetLink(app, nameof(spd_application.ownerid), team);
-        if (serviceType != null)
-        {
-            _context.SetLink(app, nameof(spd_application.spd_ServiceTypeId), serviceType);
-        }
-        if (parentOrg != null)
-        {
-            _context.SetLink(app, nameof(spd_application.spd_ParentOrganizationId), parentOrg);
-        }
-        contact? contact;
-        if (createApplicationCmd.CreatedByApplicantBcscId != null)//authenticated with 
+        _context.AddObject(app);
+
+        EbContact? contact;
+        if (createApplicationCmd.CreatedByApplicantBcscId != null)
         {
             contact = ProcessContactWithBcscApplicant(createApplicationCmd);
         }
         else
         {
-            //no authentication
             contact = AddContact(createApplicationCmd);
         }
-        // associate contact to application
-        _context.SetLink(app, nameof(app.spd_ApplicantId_contact), contact);
 
-        //create the aliases
-        foreach (var item in createApplicationCmd.Aliases)
+        if (contact != null)
         {
-            AddAlias(item, contact);
+            app.Spd_ApplicantId = contact.ToEntityReference();
+            foreach (var item in createApplicationCmd.Aliases)
+            {
+                AddAlias(item, contact);
+            }
         }
 
-        return app;
+        return await Task.FromResult(app);
     }
 
-    private contact ProcessContactWithBcscApplicant(ApplicationCreateCmd createApplicationCmd)
+    private EbContact ProcessContactWithBcscApplicant(ApplicationCreateCmd createApplicationCmd)
     {
-        var identity = _context.spd_identities
-               .Expand(i => i.spd_ContactId)
-               .Where(i => i.spd_userguid == createApplicationCmd.CreatedByApplicantBcscId)
-               .Where(i => i.spd_type == (int)IdentityTypeOptionSet.BcServicesCard)
+        var identity = _context.Spd_IdentitySet
+               .Where(i => i.Spd_UserGuid == createApplicationCmd.CreatedByApplicantBcscId)
+               .Where(i => i.Spd_Type == Spd_IdentityProvider.BcServicesCard)
                .FirstOrDefault();
+
         if (identity == null)
         {
-            identity = new spd_identity
+            identity = new Spd_Identity
             {
-                spd_identityid = Guid.NewGuid(),
-                spd_userguid = createApplicationCmd.CreatedByApplicantBcscId,
-                spd_type = (int)IdentityTypeOptionSet.BcServicesCard
+                Spd_IdentityId = Guid.NewGuid(),
+                Spd_UserGuid = createApplicationCmd.CreatedByApplicantBcscId,
+                Spd_Type = Spd_IdentityProvider.BcServicesCard
             };
-            _context.AddTospd_identities(identity);
+            _context.AddObject(identity);
             var contact = AddContact(createApplicationCmd);
-            _context.SetLink(identity, nameof(identity.spd_ContactId), contact);
+            identity.Spd_ContactId = contact.ToEntityReference();
             return contact;
         }
         else
         {
-            if (identity.spd_ContactId != null) //existing identity already connected with a contact
+            EbContact? existingContact = null;
+            if (identity.Spd_ContactId != null)
             {
-                //if the same name
-                var existingContact = identity.spd_ContactId;
-                if (!(string.Equals(existingContact.firstname, createApplicationCmd.GivenName, StringComparison.InvariantCultureIgnoreCase)
-                    && string.Equals(existingContact.lastname, createApplicationCmd.Surname, StringComparison.InvariantCultureIgnoreCase)))
+                existingContact = _context.ContactSet.Where(c => c.ContactId == identity.Spd_ContactId.Id).FirstOrDefault();
+            }
+
+            if (existingContact != null)
+            {
+                if (!(string.Equals(existingContact.FirstName, createApplicationCmd.GivenName, StringComparison.InvariantCultureIgnoreCase)
+                    && string.Equals(existingContact.LastName, createApplicationCmd.Surname, StringComparison.InvariantCultureIgnoreCase)))
                 {
-                    //if the contact first name and lastname is different. make existing one to be alias and add the new one.
                     AliasCreateCmd newAlias = new()
                     {
-                        Surname = existingContact.lastname,
-                        GivenName = existingContact.firstname,
+                        Surname = existingContact.LastName,
+                        GivenName = existingContact.FirstName,
                     };
                     AddAlias(newAlias, existingContact);
                 }
-                _mapper.Map<ApplicationCreateCmd, contact>(createApplicationCmd, existingContact);
+                _mapper.Map<ApplicationCreateCmd, EbContact>(createApplicationCmd, existingContact);
                 _context.UpdateObject(existingContact);
                 return existingContact;
             }
             else
             {
                 var contact = AddContact(createApplicationCmd);
-                _context.SetLink(identity, nameof(identity.spd_ContactId), contact);
+                identity.Spd_ContactId = contact.ToEntityReference();
                 return contact;
             }
         }
     }
 
-    private contact AddContact(ApplicationCreateCmd createApplicationCmd)
+    private EbContact AddContact(ApplicationCreateCmd createApplicationCmd)
     {
         var contact = GetContact(createApplicationCmd);
-        // if not found, create new contact
         if (contact == null)
         {
-            contact = _mapper.Map<contact>(createApplicationCmd);
-            contact.contactid = Guid.NewGuid();
-            _context.AddTocontacts(contact);
+            contact = _mapper.Map<EbContact>(createApplicationCmd);
+            contact.ContactId = Guid.NewGuid();
+            _context.AddObject(contact);
         }
         else
         {
-            //update existing one
-            _mapper.Map<ApplicationCreateCmd, contact>(createApplicationCmd, contact);
+            _mapper.Map<ApplicationCreateCmd, EbContact>(createApplicationCmd, contact);
             _context.UpdateObject(contact);
         }
         return contact;
     }
 
-    private void AddAlias(AliasCreateCmd createAliasCmd, contact contact)
+    private void AddAlias(AliasCreateCmd createAliasCmd, EbContact contact)
     {
-        spd_alias? matchingAlias = GetAlias(createAliasCmd, contact);
-        // if not found, create new alias
+        Spd_Alias? matchingAlias = GetAlias(createAliasCmd, contact);
         if (matchingAlias == null)
         {
-            spd_alias alias = _mapper.Map<spd_alias>(createAliasCmd);
-            _context.AddTospd_aliases(alias);
-            // associate alias to contact
-            _context.SetLink(alias, nameof(alias.spd_ContactId), contact);
+            Spd_Alias alias = _mapper.Map<Spd_Alias>(createAliasCmd);
+            alias.Spd_ContactId = contact.ToEntityReference();
+            _context.AddObject(alias);
         }
     }
 }

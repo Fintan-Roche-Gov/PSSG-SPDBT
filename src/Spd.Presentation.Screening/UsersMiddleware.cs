@@ -159,6 +159,36 @@ namespace Spd.Presentation.Screening
             }
 
             var userIdInfo = context.User.GetBceidUserIdentityInfo();
+
+            // DEVELOPMENT ONLY: Override roles for testing
+            // Remove this block in production!
+            var devOverrideRole = context.Request.Headers["X-Dev-Override-Role"].ToString();
+            if (!string.IsNullOrEmpty(devOverrideRole))
+            {
+                logger.LogWarning($"⚠️ DEVELOPMENT MODE: Using override role '{devOverrideRole}' for user {userIdInfo.UserGuid}");
+
+                // Get the identity from claims
+                var identity = context.User.Identity as ClaimsIdentity;
+                if (identity != null)
+                {
+                    // Remove old role claims if they exist
+                    var oldRoleClaims = identity.FindAll(ClaimTypes.Role).ToList();
+                    foreach (var oldClaim in oldRoleClaims)
+                    {
+                        identity.RemoveClaim(oldClaim);
+                    }
+
+                    // Add new role claim
+                    identity.AddClaim(new Claim(ClaimTypes.Role, devOverrideRole));
+                    logger.LogWarning($"✓ Added role claim: {devOverrideRole}");
+                    logger.LogWarning($"✓ Current user roles: {string.Join(", ", context.User.FindAll(ClaimTypes.Role).Select(c => c.Value))}");
+                }
+
+                // Also set via UpdateUserClaims for consistency
+                context.User.UpdateUserClaims(userIdInfo.UserGuid.ToString(), orgId.ToString(), devOverrideRole);
+                return true;
+            }
+
             //validate if the orgId in httpHeader is belong to this user and add the user role to claims.
             var userProfile = await cache.GetAsync($"{OrgUserCacheKeyPrefix}{userIdInfo.UserGuid}",
                 async ct => await mediator.Send(new GetCurrentUserProfileQuery(mapper.Map<PortalUserIdentity>(userIdInfo)), ct),

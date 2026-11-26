@@ -1,22 +1,15 @@
 ﻿using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.Extensions.Caching.Distributed;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
+using DataverseContext = Spd.Utilities.Dataverse.EarlyBound.DataverseContext;
 
 namespace Spd.Resource.Repository.ServiceTypes;
 
-internal class ServiceTypeRepository : IServiceTypeRepository
+internal class ServiceTypeRepository(DataverseContext ctx, IMapper mapper, IDistributedCache cache) : IServiceTypeRepository
 {
-    private readonly DynamicsContext _context;
-    private readonly IMapper _mapper;
-    private readonly IDistributedCache _cache;
-
-    public ServiceTypeRepository(IDynamicsContextFactory ctx, IMapper mapper, IDistributedCache cache)
-    {
-        _context = ctx.Create();
-        _mapper = mapper;
-        _cache = cache;
-    }
+    private readonly DataverseContext _context = ctx;
 
     public async Task<ServiceTypeListResp> QueryAsync(ServiceTypeQry qry, CancellationToken cancellationToken)
     {
@@ -25,23 +18,24 @@ internal class ServiceTypeRepository : IServiceTypeRepository
             throw new ArgumentException("must be at leaset one qry parameter.");
         }
 
-        IEnumerable<spd_servicetype> servicetypes = await _cache.GetAsync(
+        IEnumerable<Spd_ServiceType> servicetypes = await cache.GetAsync(
             "spd_servicetypes",
-            async ct => (await _context.spd_servicetypes.GetAllPagesAsync(ct)).ToList(),
+            ct => ValueTask.FromResult(_context.Spd_ServiceTypeSet.ToList()),
             TimeSpan.FromMinutes(60),
             cancellationToken) ?? [];
 
         if (qry.ServiceTypeId != null)
         {
-            servicetypes = servicetypes.Where(s => s.spd_servicetypeid == qry.ServiceTypeId);
+            servicetypes = servicetypes.Where(s => s.Spd_ServiceTypeId == qry.ServiceTypeId);
         }
-        if (qry.ServiceTypeCode != null && DynamicsContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(qry.ServiceTypeCode.ToString()!, out Guid guid))
+        if (qry.ServiceTypeCode != null && DataverseContextLookupHelpers.ServiceTypeGuidDictionary.TryGetValue(qry.ServiceTypeCode.ToString()!, out Guid guid))
         {
-            servicetypes = servicetypes.Where(s => s.spd_servicetypeid == guid);
+            servicetypes = servicetypes.Where(s => s.Spd_ServiceTypeId == guid);
         }
-        var list = _mapper.Map<IEnumerable<ServiceTypeResp>>(servicetypes);
-        var response = new ServiceTypeListResp();
-        response.Items = list;
-        return response;
+        var list = mapper.Map<IEnumerable<ServiceTypeResp>>(servicetypes);
+        return new ServiceTypeListResp
+        {
+            Items = list
+        };
     }
 }

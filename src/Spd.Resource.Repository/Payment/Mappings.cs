@@ -1,5 +1,6 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 
 namespace Spd.Resource.Repository.Payment
@@ -8,50 +9,50 @@ namespace Spd.Resource.Repository.Payment
     {
         public Mappings()
         {
-            _ = CreateMap<CreatePaymentCmd, spd_payment>()
-                .ForMember(d => d.spd_paymentid, opt => opt.MapFrom(s => s.PaymentId))
-                .ForMember(d => d.spd_amount, opt => opt.MapFrom(s => s.TransAmount))
-                .ForMember(d => d.spd_manualpayment, opt => opt.MapFrom(s => 0))
-                .ForMember(d => d.spd_transactionid, opt => opt.MapFrom(s => s.TransNumber))
-                .ForMember(d => d.spd_paymenttype, opt => opt.MapFrom(s => (int)Enum.Parse<PaymentTypeOptionSet>(s.PaymentType.ToString())))
-                .ForMember(d => d.statecode, opt => opt.MapFrom(s => DynamicsConstants.StateCode_Active))
-                .ForMember(d => d.spd_response, opt => opt.MapFrom(s => GetResponseCode(s.Success)))
-                .ForMember(d => d.spd_datetimeofpayment, opt => opt.MapFrom(s => s.TransDateTime))
-                .ForMember(d => d.spd_errordescription, opt => opt.MapFrom(s => s.MessageText))
-                .ForMember(d => d.spd_ordernumber, opt => opt.MapFrom(s => s.TransOrderId))
-                .ForMember(d => d.statuscode, opt => opt.MapFrom(s => PaymentStatusCodeOptionSet.Pending));
+            _ = CreateMap<CreatePaymentCmd, Spd_Payment>()
+                .ForMember(d => d.Spd_PaymentId, opt => opt.MapFrom(s => s.PaymentId))
+                .ForMember(d => d.Spd_Amount, opt => opt.MapFrom(s => s.TransAmount == 0 ? null : new Money(s.TransAmount)))
+                .ForMember(d => d.Spd_ManualPayment, opt => opt.MapFrom(s => false))
+                .ForMember(d => d.Spd_TransactionId, opt => opt.MapFrom(s => s.TransNumber))
+                .ForMember(d => d.Spd_PaymentType, opt => opt.MapFrom(s => (Spd_PaymentType)(int)Enum.Parse<PaymentTypeOptionSet>(s.PaymentType.ToString())))
+                .ForMember(d => d.StateCode, opt => opt.MapFrom(s => Spd_Payment_StateCode.Active))
+                .ForMember(d => d.Spd_Response, opt => opt.MapFrom(s => GetResponseCode(s.Success)))
+                .ForMember(d => d.Spd_DateTimeOfPayment, opt => opt.Ignore())
+                .ForMember(d => d.Spd_ErrorDescription, opt => opt.MapFrom(s => s.MessageText))
+                .ForMember(d => d.Spd_OrderNumber, opt => opt.MapFrom(s => s.TransOrderId))
+                .ForMember(d => d.StatusCode, opt => opt.MapFrom(s => Spd_Payment_StatusCode.Pending));
 
-            _ = CreateMap<UpdatePaymentCmd, spd_payment>()
-               .ForMember(d => d.statecode, opt => opt.MapFrom(s => DynamicsConstants.StateCode_Inactive))
-               .ForMember(d => d.spd_refunderrordescription, opt => opt.MapFrom(s => s.RefundErrorMsg))
-               .ForMember(d => d.spd_refundid, opt => opt.MapFrom(s => s.RefundId))
-               .ForMember(d => d.spd_refunddate, opt => opt.MapFrom(s => s.RefundTxnDateTime));
+            _ = CreateMap<UpdatePaymentCmd, Spd_Payment>()
+               .ForMember(d => d.StateCode, opt => opt.MapFrom(s => Spd_Payment_StateCode.Inactive))
+               .ForMember(d => d.Spd_RefundErrorDescription, opt => opt.MapFrom(s => s.RefundErrorMsg))
+               .ForMember(d => d.Spd_RefundId, opt => opt.MapFrom(s => s.RefundId))
+               .ForMember(d => d.Spd_RefundDate, opt => opt.Ignore());
 
-            _ = CreateMap<spd_payment, PaymentResp>()
-                .ForMember(d => d.PaymentId, opt => opt.MapFrom(s => s.spd_paymentid))
-                .ForMember(d => d.PaidSuccess, opt => opt.MapFrom(s => s.spd_response == (int)ResponseOptionSet.Success))
-                .ForMember(d => d.Message, opt => opt.MapFrom(s => s.spd_errordescription))
-                .ForMember(d => d.ApplicationId, opt => opt.MapFrom(s => s._spd_applicationid_value))
-                .ForMember(d => d.TransAmount, opt => opt.MapFrom(s => s.spd_amount))
-                .ForMember(d => d.TransOrderId, opt => opt.MapFrom(s => s.spd_ordernumber))
-                .ForMember(d => d.TransDateTime, opt => opt.MapFrom(s => s.spd_datetimeofpayment))
-                .ForMember(d => d.TransactionNumber, opt => opt.MapFrom(s => s.spd_transactionid))
-                .ForMember(d => d.PaymentType, opt => opt.MapFrom(s => GetPaymentType(s.spd_paymenttype)))
-                .ForMember(d => d.LicenceTermCode, opt => opt.MapFrom(s => SharedMappingFuncs.GetLicenceTermEnum(s.spd_ApplicationId.spd_licenceterm)))
-                .ForMember(d => d.ApplicationTypeCode, opt => opt.MapFrom(s => SharedMappingFuncs.GetLicenceApplicationTypeEnum(s.spd_ApplicationId.spd_licenceapplicationtype)))
-                .ForMember(d => d.CaseNumber, opt => opt.MapFrom(s => s.spd_ApplicationId.spd_name))
-                .ForMember(d => d.Refunded, opt => opt.MapFrom(s => s.statuscode == (int)PaymentStatusCodeOptionSet.Refunded))
-                .ForMember(d => d.ApplicationEmail, opt => opt.MapFrom(s => s.spd_ApplicationId.spd_emailaddress1))
-                .ForMember(d => d.OrganizationId, opt => opt.MapFrom(s => s.spd_ApplicationId._spd_organizationid_value))
-                .ForMember(d => d.PayeeType, opt => opt.MapFrom(s => SharedMappingFuncs.GetPayeeType(s.spd_ApplicationId.spd_payer)))
-                .ForMember(d => d.ServiceType, opt => opt.MapFrom(s => SharedMappingFuncs.GetServiceType(s.spd_ApplicationId._spd_servicetypeid_value)));
+            _ = CreateMap<Spd_Payment, PaymentResp>()
+                .ForMember(d => d.PaymentId, opt => opt.MapFrom(s => s.Spd_PaymentId ?? Guid.Empty))
+                .ForMember(d => d.PaidSuccess, opt => opt.MapFrom(s => s.Spd_Response == Spd_Payment_Spd_Response.Success))
+                .ForMember(d => d.Message, opt => opt.MapFrom(s => s.Spd_ErrorDescription))
+                .ForMember(d => d.ApplicationId, opt => opt.MapFrom(s => s.Spd_ApplicationId == null ? Guid.Empty : s.Spd_ApplicationId.Id))
+                .ForMember(d => d.TransAmount, opt => opt.MapFrom(s => s.Spd_Amount == null ? 0m : s.Spd_Amount.Value))
+                .ForMember(d => d.TransOrderId, opt => opt.MapFrom(s => s.Spd_OrderNumber))
+                .ForMember(d => d.TransDateTime, opt => opt.MapFrom(s => s.Spd_DateTimeOfPayment == null ? DateTimeOffset.MinValue : new DateTimeOffset(DateTime.SpecifyKind(s.Spd_DateTimeOfPayment.Value, DateTimeKind.Utc))))
+                .ForMember(d => d.TransactionNumber, opt => opt.MapFrom(s => s.Spd_TransactionId))
+                .ForMember(d => d.PaymentType, opt => opt.MapFrom(s => GetPaymentType((int?)s.Spd_PaymentType)))
+                .ForMember(d => d.LicenceTermCode, opt => opt.Ignore())
+                .ForMember(d => d.ApplicationTypeCode, opt => opt.Ignore())
+                .ForMember(d => d.CaseNumber, opt => opt.Ignore())
+                .ForMember(d => d.Refunded, opt => opt.MapFrom(s => s.StatusCode == Spd_Payment_StatusCode.Refunded))
+                .ForMember(d => d.ApplicationEmail, opt => opt.Ignore())
+                .ForMember(d => d.OrganizationId, opt => opt.MapFrom(s => Guid.Empty))
+                .ForMember(d => d.PayeeType, opt => opt.Ignore())
+                .ForMember(d => d.ServiceType, opt => opt.Ignore());
         }
 
-        private int? GetResponseCode(bool? success)
+        private Spd_Payment_Spd_Response? GetResponseCode(bool? success)
         {
             if (success == null) return null;
-            if ((bool)success) return (int)ResponseOptionSet.Success;
-            else return (int)ResponseOptionSet.Failure;
+            if ((bool)success) return Spd_Payment_Spd_Response.Success;
+            else return Spd_Payment_Spd_Response.Failure;
         }
 
         private PaymentTypeEnum? GetPaymentType(int? paymentType)

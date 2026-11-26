@@ -249,8 +249,8 @@ public class DocumentRepositoryTest : IClassFixture<IntegrationTestSetup>
             var documenturl = _context.bcgov_documenturls
                 .Where(d => d.bcgov_documenturlid == removeResponse.DocumentUrlId).FirstOrDefault();
             Assert.NotNull(removeResponse);
-            Assert.Equal(documenturl?.statecode, DynamicsConstants.StateCode_Inactive);
-            Assert.Equal(documenturl?.statuscode, DynamicsConstants.StatusCode_Inactive);
+            Assert.Equal(documenturl?.statecode, DataverseConstants.StateCode_Inactive);
+            Assert.Equal(documenturl?.statuscode, DataverseConstants.StatusCode_Inactive);
         }
         catch (Exception e)
         {
@@ -312,15 +312,15 @@ public class DocumentRepositoryTest : IClassFixture<IntegrationTestSetup>
             var result = await _documentRepository.ManageAsync(cmd, CancellationToken.None);
             var documenturl = _context.bcgov_documenturls
                 .Where(d => d.bcgov_documenturlid == result.DocumentUrlId).FirstOrDefault();
-            documenturl.statecode = DynamicsConstants.StateCode_Inactive;
-            documenturl.statuscode = DynamicsConstants.StatusCode_Inactive;
+            documenturl.statecode = DataverseConstants.StateCode_Inactive;
+            documenturl.statuscode = DataverseConstants.StatusCode_Inactive;
             _context.UpdateObject(documenturl);
             _context.SaveChanges();
             var response = await _documentRepository.ManageAsync(new ReactivateDocumentCmd((Guid)documenturl.bcgov_documenturlid), CancellationToken.None);
             Assert.NotNull(response);
             documenturl = _context.bcgov_documenturls.Where(d => d.bcgov_documenturlid == response.DocumentUrlId).FirstOrDefault();
-            Assert.Equal(documenturl?.statecode, DynamicsConstants.StateCode_Active);
-            Assert.Equal(documenturl?.statuscode, DynamicsConstants.StatusCode_Active);
+            Assert.Equal(documenturl?.statecode, DataverseConstants.StateCode_Active);
+            Assert.Equal(documenturl?.statuscode, DataverseConstants.StatusCode_Active);
         }
         catch (Exception e)
         {
@@ -385,8 +385,8 @@ public class DocumentRepositoryTest : IClassFixture<IntegrationTestSetup>
             var documenturl = _context.bcgov_documenturls
                 .Where(d => d.bcgov_documenturlid == removeResponse.DocumentUrlId).FirstOrDefault();
             Assert.NotNull(removeResponse);
-            Assert.Equal(documenturl?.statecode, DynamicsConstants.StateCode_Inactive);
-            Assert.Equal(documenturl?.statuscode, DynamicsConstants.StatusCode_Inactive);
+            Assert.Equal(documenturl?.statecode, DataverseConstants.StateCode_Inactive);
+            Assert.Equal(documenturl?.statuscode, DataverseConstants.StatusCode_Inactive);
         }
         catch (Exception e)
         {

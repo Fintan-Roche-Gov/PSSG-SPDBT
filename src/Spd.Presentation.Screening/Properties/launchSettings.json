@@ -1,14 +1,28 @@
 {
-    "profiles": {
-        "spd.presentation.screening": {
-            "commandName": "Project",
-            "dotnetRunMessages": true,
-            "launchBrowser": false,
-            "applicationUrl": "http://localhost:5114",
-            "environmentVariables": {
-                "ASPNETCORE_ENVIRONMENT": "Development",
-                "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES": "Microsoft.AspNetCore.SpaProxy"
-            }
-        }
+  "profiles": {
+    "spd.presentation.screening": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "ASPNETCORE_HOSTINGSTARTUPASSEMBLIES": "Microsoft.AspNetCore.SpaProxy"
+      },
+      "dotnetRunMessages": true,
+      "applicationUrl": "http://localhost:5114"
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
     }
+  },
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:62174/",
+      "sslPort": 44386
+    }
+  }
 }

@@ -1,34 +1,36 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Spd.Utilities.Dynamics;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using DataverseContext = Spd.Utilities.Dataverse.DataverseContext;
 
 namespace Spd.Resource.Repository.DogBase;
 internal abstract class DogAppBaseRepository : IDogAppBaseRepository
 {
-    protected readonly DynamicsContext _context;
+    protected readonly DataverseContext _context;
     protected readonly IMapper _mapper;
 
-    public DogAppBaseRepository(IDynamicsContextFactory ctx, IMapper mapper)
+    public DogAppBaseRepository(IDataverseContextFactory ctx, IMapper mapper)
     {
         _context = ctx.CreateChangeOverwrite();
         _mapper = mapper;
     }
 
-    public async Task CommitAppAsync(CommitAppCmd cmd, CancellationToken ct)
+    public async System.Threading.Tasks.Task CommitAppAsync(CommitAppCmd cmd, CancellationToken ct)
     {
-        spd_application? app = await _context.GetApplicationById(cmd.LicenceAppId, ct);
+        Spd_Application? app = await _context.GetApplicationById(cmd.LicenceAppId, ct);
         if (app == null)
             throw new ApiException(HttpStatusCode.BadRequest, "Invalid ApplicationId");
 
         //spdbt-4143: dog app, no need to verify identification, app go directly to submitted.
-        app.statuscode = (int)Enum.Parse<ApplicationStatusOptionSet>(ApplicationStatusEnum.Submitted.ToString());
-        app.statecode = DynamicsConstants.StateCode_Inactive;
-        app.spd_submittedon = DateTimeOffset.UtcNow;
-        app.spd_portalmodifiedon = DateTimeOffset.UtcNow;
-        app.spd_licencefee = 0;
-        _context.UpdateObject(app);
-        await _context.SaveChangesAsync(ct);
+        app.StatusCode = Spd_Application_StatusCode.Submitted;
+        app.StateCode = Spd_Application_StateCode.Inactive;
+        app.Spd_SubmittedOn = DateTime.UtcNow;
+        app.Spd_PortalModifiedOn = DateTime.UtcNow;
+        app.Spd_LicenceFee = new Money(0);
+        _context.EarlyBoundContext.UpdateObject(app);
+        _context.EarlyBoundContext.SaveChanges();
     }
 }

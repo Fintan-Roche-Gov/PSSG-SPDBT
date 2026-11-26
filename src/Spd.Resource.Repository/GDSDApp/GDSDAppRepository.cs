@@ -2,6 +2,7 @@ using AutoMapper;
 using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.OData.Client;
 using Spd.Resource.Repository.DogBase;
+using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
@@ -9,7 +10,7 @@ using System.Net;
 namespace Spd.Resource.Repository.GDSDApp;
 internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
 {
-    public GDSDAppRepository(IDynamicsContextFactory ctx, IMapper mapper) : base(ctx, mapper)
+    public GDSDAppRepository(IDataverseContextFactory ctx, IMapper mapper) : base(ctx, mapper)
     {
     }
 
@@ -20,7 +21,7 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
         if (cmd.ApplicationTypeCode == ApplicationTypeEnum.New)
         {
             contact = _mapper.Map<contact>(cmd);
-            contact = await _context.CreateContact(contact, null, null, ct);
+            _context.AddTocontacts(contact);
             app = PrepareNewAppDataInDbContext(cmd, contact);
             _context.SetLink(app, nameof(app.spd_ApplicantId_contact), contact);
         }
@@ -50,7 +51,7 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
             }
             SharedRepositoryFuncs.LinkLicence(_context, cmd.OriginalLicenceId, app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
-            SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+            SharedRepositoryFuncs.LinkTeam(_context, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
             SharedRepositoryFuncs.LinkDog(_context, cmd.DogId, app);
         }
         await _context.SaveChangesAsync(ct);
@@ -114,9 +115,9 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
     private spd_application PrepareNewAppDataInDbContext(GDSDApp appData, contact applicant)
     {
         var app = _mapper.Map<spd_application>(appData);
-        app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
+        app.statuscode = (int)Spd.Utilities.Dynamics.ApplicationStatusOptionSet.Incomplete;
         _context.AddTospd_applications(app);
-        Guid teamGuid = Guid.Parse(DynamicsConstants.Licensing_Client_Service_Team_Guid);
+        Guid teamGuid = Guid.Parse(Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid);
         team? serviceTeam = _context.teams.Where(t => t.teamid == teamGuid).FirstOrDefault();
         if (appData.IsDogTrainedByAccreditedSchool.HasValue && appData.IsDogTrainedByAccreditedSchool.Value)
         {
@@ -179,7 +180,7 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
         }
 
         SharedRepositoryFuncs.LinkServiceType(_context, appData.ServiceTypeCode, app);
-        SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+        SharedRepositoryFuncs.LinkTeam(_context, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 
@@ -206,14 +207,14 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
         _mapper.Map<GDSDApp, spd_application>(appData, app);
         _context.UpdateObject(app);
 
-        Guid teamGuid = Guid.Parse(DynamicsConstants.Licensing_Client_Service_Team_Guid);
+        Guid teamGuid = Guid.Parse(Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid);
         team? serviceTeam = _context.teams.Where(t => t.teamid == teamGuid).FirstOrDefault();
 
         if (appData.IsDogTrainedByAccreditedSchool.HasValue && appData.IsDogTrainedByAccreditedSchool.Value)
         {
             //accredited school
             _mapper.Map<AccreditedSchoolQuestions, spd_application>(appData.AccreditedSchoolQuestions, app);
-            app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
+            app.statuscode = (int)Spd.Utilities.Dynamics.ApplicationStatusOptionSet.Incomplete;
             _context.UpdateObject(app);
 
             //delete all non-accredited school
@@ -261,7 +262,7 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
             {
                 _mapper.Map<NonAccreditedSchoolQuestions, spd_application>(appData.NonAccreditedSchoolQuestions, app);
                 app.spd_dogsassistanceindailyliving = appData.NonAccreditedSchoolQuestions.TrainingInfo?.SpecializedTasksWhenPerformed;
-                app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
+                app.statuscode = (int)Spd.Utilities.Dynamics.ApplicationStatusOptionSet.Incomplete;
                 _context.UpdateObject(app);
             }
 
@@ -324,7 +325,7 @@ internal class GDSDAppRepository : DogAppBaseRepository, IGDSDAppRepository
             }
         }
         SharedRepositoryFuncs.LinkServiceType(_context, appData.ServiceTypeCode, app);
-        SharedRepositoryFuncs.LinkTeam(_context, DynamicsConstants.Licensing_Client_Service_Team_Guid, app);
+        SharedRepositoryFuncs.LinkTeam(_context, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 

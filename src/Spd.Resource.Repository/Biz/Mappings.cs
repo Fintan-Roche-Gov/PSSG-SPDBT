@@ -98,7 +98,7 @@ namespace Spd.Resource.Repository.Biz
                 {
                     try
                     {
-                        var name = DynamicsContextLookupHelpers.GetServiceTypeName(s.spd_servicetypeid);
+                        var name = DataverseContextLookupHelpers.GetServiceTypeName(s.spd_servicetypeid);
                         return Enum.TryParse<ServiceTypeEnum>(name, out var parsedEnum) ? (ServiceTypeEnum?)parsedEnum : null;
                     }
                     catch
@@ -115,10 +115,10 @@ namespace Spd.Resource.Repository.Biz
             bool hasItems = context.TryGetItems(out var items);
             if (hasItems && (bool)items["includeMainOffice"])
                 return context.Mapper.Map<IEnumerable<BranchAddr>>(account.spd_Organization_Addresses
-                   .Where(a => (a.spd_type == (int)AddressTypeOptionSet.Branch || a.spd_type == (int)AddressTypeOptionSet.MainOffice) && a.statecode == DynamicsConstants.StateCode_Active));
+                   .Where(a => (a.spd_type == (int)AddressTypeOptionSet.Branch || a.spd_type == (int)AddressTypeOptionSet.MainOffice) && a.statecode == DataverseConstants.StateCode_Active));
             else
                 return context.Mapper.Map<IEnumerable<BranchAddr>>(account.spd_Organization_Addresses
-                   .Where(a => a.spd_type == (int)AddressTypeOptionSet.Branch && a.statecode == DynamicsConstants.StateCode_Active));
+                   .Where(a => a.spd_type == (int)AddressTypeOptionSet.Branch && a.statecode == DataverseConstants.StateCode_Active));
         }
     }
 }

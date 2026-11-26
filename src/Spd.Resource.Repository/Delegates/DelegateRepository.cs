@@ -1,34 +1,39 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
+using Task = System.Threading.Tasks.Task;
 
 namespace Spd.Resource.Repository.Delegates;
 internal class DelegateRepository : IDelegateRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly Spd.Utilities.Dataverse.EarlyBound.DataverseContext _context;
     private readonly IMapper _mapper;
 
-    public DelegateRepository(IDynamicsContextFactory ctx,
+    public DelegateRepository(Spd.Utilities.Dataverse.EarlyBound.DataverseContext ctx,
         IMapper mapper)
     {
-        _context = ctx.Create();
+        _context = ctx;
         _mapper = mapper;
     }
 
     public async Task<DelegateListResp> QueryAsync(DelegateQry qry, CancellationToken ct)
     {
-        IQueryable<spd_delegate> delegates = _context.spd_delegates
-            .Expand(d => d.spd_PortalUserId)
-            .Where(d => d.statecode != DynamicsConstants.StateCode_Inactive);
+        IQueryable<Spd_Delegate> delegates = _context.Spd_DelegateSet
+            .Where(d => d.StateCode != Spd_Delegate_StateCode.Inactive);
 
-        if (qry.ApplicationId != null) delegates = delegates.Where(d => d._spd_applicationid_value == qry.ApplicationId);
-        if (qry.PortalUserId != null) delegates = delegates.Where(d => d._spd_portaluserid_value == qry.PortalUserId);
+        if (qry.ApplicationId != null) delegates = delegates.Where(d => d.Spd_ApplicationId != null && d.Spd_ApplicationId.Id == qry.ApplicationId);
+        if (qry.PortalUserId != null) delegates = delegates.Where(d => d.Spd_PortalUserId != null && d.Spd_PortalUserId.Id == qry.PortalUserId);
 
         var result = delegates.ToList();
-        var response = new DelegateListResp();
-        var list = _mapper.Map<IEnumerable<DelegateResp>>(result);
-        response.Items = list;
-        return response;
+        foreach (Spd_Delegate item in result)
+        {
+            _context.LoadProperty(item, nameof(Spd_Delegate.Spd_PortalUser_Spd_Delegate));
+        }
+
+        var response = new DelegateListResp
+        {
+            Items = _mapper.Map<IEnumerable<DelegateResp>>(result)
+        };
+        return await Task.FromResult(response);
     }
 
     public async Task<DelegateResp> ManageAsync(DelegateCmd cmd, CancellationToken ct)
@@ -43,25 +48,38 @@ internal class DelegateRepository : IDelegateRepository
 
     private async Task<DelegateResp> CreateDelegateAsync(CreateDelegateCmd c, CancellationToken ct)
     {
-        spd_application app = await _context.GetApplicationById(c.ApplicationId, ct);
-        spd_portaluser? user = c.PortalUserId != null ? await _context.GetUserById((Guid)c.PortalUserId, ct) : null;
-        spd_delegate d = _mapper.Map<spd_delegate>(c);
-        _context.AddTospd_delegates(d);
-        _context.SetLink(d, nameof(d.spd_ApplicationId), app);
-        if (user != null) _context.SetLink(d, nameof(d.spd_PortalUserId), user);
+        Spd_Application? app = _context.Spd_ApplicationSet.Where(a => a.Spd_ApplicationId == c.ApplicationId).FirstOrDefault();
+        if (app == null) throw new ArgumentException("cannot find application");
 
-        await _context.SaveChangesAsync(ct);
-        return _mapper.Map<DelegateResp>(d);
+        Spd_PortalUser? user = c.PortalUserId != null
+            ? _context.Spd_PortalUserSet.Where(u => u.Spd_PortalUserId == c.PortalUserId).FirstOrDefault()
+            : null;
+
+        Spd_Delegate d = _mapper.Map<Spd_Delegate>(c);
+        d.Spd_ApplicationId = app.ToEntityReference();
+        if (user != null) d.Spd_PortalUserId = user.ToEntityReference();
+
+        _context.AddObject(d);
+        _context.SaveChanges();
+
+        if (user != null)
+        {
+            d.Spd_PortalUser_Spd_Delegate = user;
+        }
+
+        return await Task.FromResult(_mapper.Map<DelegateResp>(d));
     }
 
     private async Task<DelegateResp> DeleteDelegateAsync(DeleteDelegateCmd c, CancellationToken ct)
     {
-        spd_delegate? d = await _context.GetDelegateById(c.Id, ct);
-        d.statecode = DynamicsConstants.StateCode_Inactive;
-        d.statuscode = DynamicsConstants.StatusCode_Inactive;
+        Spd_Delegate? d = _context.Spd_DelegateSet.Where(x => x.Spd_DelegateId == c.Id).FirstOrDefault();
+        if (d == null) throw new ArgumentException("cannot find delegate");
+
+        d.StateCode = Spd_Delegate_StateCode.Inactive;
+        d.StatusCode = Spd_Delegate_StatusCode.Inactive;
         _context.UpdateObject(d);
-        await _context.SaveChangesAsync(ct);
-        return _mapper.Map<DelegateResp>(d);
+        _context.SaveChanges();
+        return await Task.FromResult(_mapper.Map<DelegateResp>(d));
     }
 }
 

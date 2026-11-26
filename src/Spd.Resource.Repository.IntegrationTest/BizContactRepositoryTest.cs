@@ -150,9 +150,9 @@ public class BizContactRepositoryTest : IClassFixture<IntegrationTestSetup>
 
             Assert.Equal(3, bizContacts.Count());
             Assert.True(bizContacts.Any(c => c.spd_firstname == IntegrationTestSetup.DataPrefix + "newFirstName1")); // updated
-            Assert.True(bizContacts.Any(c => c.spd_firstname == IntegrationTestSetup.DataPrefix + "firstName2" && c.statecode == DynamicsConstants.StateCode_Inactive)); // removed
-            Assert.True(bizContacts.Any(c => c.spd_firstname == IntegrationTestSetup.DataPrefix + "newFirstName3" && c.statecode == DynamicsConstants.StateCode_Active));
-            Assert.Equal(1, bizContacts.Count(c => c._spd_contactid_value == contact.contactid && c.statecode == DynamicsConstants.StateCode_Active));
+            Assert.True(bizContacts.Any(c => c.spd_firstname == IntegrationTestSetup.DataPrefix + "firstName2" && c.statecode == DataverseConstants.StateCode_Inactive)); // removed
+            Assert.True(bizContacts.Any(c => c.spd_firstname == IntegrationTestSetup.DataPrefix + "newFirstName3" && c.statecode == DataverseConstants.StateCode_Active));
+            Assert.Equal(1, bizContacts.Count(c => c._spd_contactid_value == contact.contactid && c.statecode == DataverseConstants.StateCode_Active));
         }
         catch (Exception ex)
         {
@@ -244,7 +244,7 @@ public class BizContactRepositoryTest : IClassFixture<IntegrationTestSetup>
             // Assert
             var bizContacts = _context.spd_businesscontacts
                 .Where(c => c._spd_organizationid_value == biz.accountid)
-                .Where(c => c.statecode == DynamicsConstants.StateCode_Active)
+                .Where(c => c.statecode == DataverseConstants.StateCode_Active)
                 .ToList();
             Assert.Equal(3, bizContacts.Count());
             Assert.Equal(true, bizContacts.Any(c => c.spd_firstname == "newFirstName1")); //updated
@@ -306,7 +306,7 @@ public class BizContactRepositoryTest : IClassFixture<IntegrationTestSetup>
     {
         var existing = _context.accounts
             .Where(a => a.spd_organizationlegalname == $"{testPrefix}{orgName}")
-            .Where(a => a.statecode != DynamicsConstants.StateCode_Inactive)
+            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
             .FirstOrDefault();
         if (existing != null) return existing;
         else

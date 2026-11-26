@@ -1,8 +1,9 @@
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
 using Microsoft.OData.Edm;
 using Spd.Resource.Repository.PersonLicApplication;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using System.Text.RegularExpressions;
+using ContactEntity = Spd.Utilities.Dataverse.EarlyBound.Contact;
 
 namespace Spd.Resource.Repository;
 internal static class SharedMappingFuncs
@@ -70,7 +71,7 @@ internal static class SharedMappingFuncs
     internal static ServiceTypeEnum? GetServiceType(Guid? serviceTypeGuid)
     {
         if (serviceTypeGuid == null) return null;
-        return Enum.Parse<ServiceTypeEnum>(DynamicsContextLookupHelpers.GetServiceTypeName(serviceTypeGuid));
+        return Enum.Parse<ServiceTypeEnum>(global::Spd.Utilities.Dynamics.DynamicsContextLookupHelpers.GetServiceTypeName(serviceTypeGuid));
     }
 
     internal static BizTypeEnum? GetBizTypeEnum(int? optionset)
@@ -174,12 +175,12 @@ internal static class SharedMappingFuncs
         return Enum.Parse<E>(Enum.GetName(typeof(O), optionset));
     }
 
-    internal static WorkerCategoryTypeEnum[] GetWorkerCategoryTypeEnums(ICollection<spd_licencecategory> categories)
+    internal static WorkerCategoryTypeEnum[] GetWorkerCategoryTypeEnums(ICollection<Spd_LicenceCategory> categories)
     {
         List<WorkerCategoryTypeEnum> codes = new() { };
-        foreach (spd_licencecategory cat in categories)
+        foreach (Spd_LicenceCategory cat in categories)
         {
-            codes.Add(Enum.Parse<WorkerCategoryTypeEnum>(DynamicsContextLookupHelpers.LookupLicenceCategoryKey(cat.spd_licencecategoryid)));
+            codes.Add(Enum.Parse<WorkerCategoryTypeEnum>(global::Spd.Utilities.Dynamics.DynamicsContextLookupHelpers.LookupLicenceCategoryKey(cat.Spd_LicenceCategoryId)));
         }
         return codes.ToArray();
     }
@@ -217,12 +218,12 @@ internal static class SharedMappingFuncs
         }
     }
 
-    internal static ContactRoleCode? GetContactRoleCode(IEnumerable<spd_role> spdRoles)
+    internal static ContactRoleCode? GetContactRoleCode(IEnumerable<Spd_Role> spdRoles)
     {
-        spd_role role = spdRoles.FirstOrDefault();
+        Spd_Role role = spdRoles.FirstOrDefault();
         if (role == null) return null;
         return Enum.Parse<ContactRoleCode>(
-           DynamicsContextLookupHelpers.RoleGuidDictionary.FirstOrDefault(x => x.Value == role.spd_roleid).Key);
+           global::Spd.Utilities.Dynamics.DynamicsContextLookupHelpers.RoleGuidDictionary.FirstOrDefault(x => x.Value == role.Spd_RoleId).Key);
     }
     internal static bool GetIdentityConfirmed(ApplicationOriginTypeEnum? origin, ApplicationTypeEnum type)
     {
@@ -386,97 +387,97 @@ internal static class SharedMappingFuncs
         return agree != null && agree == true ? DateTime.Now : null;
     }
 
-    internal static MailingAddr? GetMailingAddressData(spd_dogtrainingschool s)
+    internal static MailingAddr? GetMailingAddressData(Spd_DogTrainingSchool s)
     {
         MailingAddr mailingAddress = new();
-        mailingAddress.AddressLine1 = s.spd_street1;
-        mailingAddress.AddressLine2 = s.spd_street2;
-        mailingAddress.City = s.spd_city;
-        mailingAddress.Province = s.spd_provincestate;
-        mailingAddress.Country = s.spd_country;
-        mailingAddress.PostalCode = s.spd_postalzipcode;
+        mailingAddress.AddressLine1 = s.Spd_Street1;
+        mailingAddress.AddressLine2 = s.Spd_Street2;
+        mailingAddress.City = s.Spd_City;
+        mailingAddress.Province = s.Spd_ProvinceState;
+        mailingAddress.Country = s.Spd_Country;
+        mailingAddress.PostalCode = s.Spd_PostalZipCode;
         return mailingAddress;
     }
 
-    internal static MailingAddr? GetMailingAddressData(spd_application c)
+    internal static MailingAddr? GetMailingAddressData(Spd_Application c)
     {
         MailingAddr mailingAddress = new();
-        mailingAddress.AddressLine1 = c.spd_addressline1;
-        mailingAddress.AddressLine2 = c.spd_addressline2;
-        mailingAddress.City = c.spd_city;
-        mailingAddress.Province = c.spd_province;
-        mailingAddress.Country = c.spd_country;
-        mailingAddress.PostalCode = c.spd_postalcode;
+        mailingAddress.AddressLine1 = c.Spd_AddressLine1;
+        mailingAddress.AddressLine2 = c.Spd_AddressLine2;
+        mailingAddress.City = c.Spd_City;
+        mailingAddress.Province = c.Spd_Province;
+        mailingAddress.Country = c.Spd_Country;
+        mailingAddress.PostalCode = c.Spd_PostalCode;
         return mailingAddress;
     }
 
-    internal static MailingAddr? GetMailingAddressData(contact c)
+    internal static MailingAddr? GetMailingAddressData(ContactEntity c)
     {
         MailingAddr mailingAddress = new();
-        mailingAddress.AddressLine1 = c.address1_line1;
-        mailingAddress.AddressLine2 = c.address1_line2;
-        mailingAddress.City = c.address1_city;
-        mailingAddress.Province = c.address1_stateorprovince;
-        mailingAddress.Country = c.address1_country;
-        mailingAddress.PostalCode = c.address1_postalcode;
+        mailingAddress.AddressLine1 = c.Address1_Line1;
+        mailingAddress.AddressLine2 = c.Address1_Line2;
+        mailingAddress.City = c.Address1_City;
+        mailingAddress.Province = c.Address1_StateOrProvince;
+        mailingAddress.Country = c.Address1_Country;
+        mailingAddress.PostalCode = c.Address1_PostalCode;
         return mailingAddress;
     }
 
-    internal static Addr? GetEmployerAddressData(spd_application app)
+    internal static Addr? GetEmployerAddressData(Spd_Application app)
     {
         Addr addr = new();
-        addr.AddressLine1 = app.spd_employeraddress1;
-        addr.AddressLine2 = app.spd_employeraddress2;
-        addr.City = app.spd_employercity;
-        addr.Province = app.spd_employerprovince;
-        addr.Country = app.spd_employercountry;
-        addr.PostalCode = app.spd_employerpostalcode;
+        addr.AddressLine1 = app.Spd_EmployerAddress1;
+        addr.AddressLine2 = app.Spd_EmployerAddress2;
+        addr.City = app.Spd_EmployerCity;
+        addr.Province = app.Spd_EmployerProvince;
+        addr.Country = app.Spd_EmployerCountry;
+        addr.PostalCode = app.Spd_EmployerPostalCode;
         return addr;
     }
-    internal static ResidentialAddr? GetResidentialAddressData(contact c)
+    internal static ResidentialAddr? GetResidentialAddressData(ContactEntity c)
     {
         ResidentialAddr mailingAddress = new();
-        mailingAddress.AddressLine1 = c.address2_line1;
-        mailingAddress.AddressLine2 = c.address2_line2;
-        mailingAddress.City = c.address2_city;
-        mailingAddress.Province = c.address2_stateorprovince;
-        mailingAddress.Country = c.address2_country;
-        mailingAddress.PostalCode = c.address2_postalcode;
+        mailingAddress.AddressLine1 = c.Address2_Line1;
+        mailingAddress.AddressLine2 = c.Address2_Line2;
+        mailingAddress.City = c.Address2_City;
+        mailingAddress.Province = c.Address2_StateOrProvince;
+        mailingAddress.Country = c.Address2_Country;
+        mailingAddress.PostalCode = c.Address2_PostalCode;
         return mailingAddress;
     }
 
-    internal static ResidentialAddr? GetResidentialAddressData(spd_application app)
+    internal static ResidentialAddr? GetResidentialAddressData(Spd_Application app)
     {
         ResidentialAddr addr = new();
-        addr.AddressLine1 = app.spd_residentialaddress1;
-        addr.AddressLine2 = app.spd_residentialaddress2;
-        addr.City = app.spd_residentialcity;
-        addr.Province = app.spd_residentialprovince;
-        addr.Country = app.spd_residentialcountry;
-        addr.PostalCode = app.spd_residentialpostalcode;
+        addr.AddressLine1 = app.Spd_ResidentialAddress1;
+        addr.AddressLine2 = app.Spd_ResidentialAddress2;
+        addr.City = app.Spd_ResidentialCity;
+        addr.Province = app.Spd_ResidentialProvince;
+        addr.Country = app.Spd_ResidentialCountry;
+        addr.PostalCode = app.Spd_ResidentialPostalCode;
         return addr;
     }
 
-    internal static bool? IsMailingResidentialSame(contact c)
+    internal static bool? IsMailingResidentialSame(ContactEntity c)
     {
-        if (c.address1_line1 == null
-            && c.address1_line2 == null
-            && c.address1_city == null
-            && c.address1_stateorprovince == null
-            && c.address1_country == null
-            && c.address1_postalcode == null
-            && c.address2_line1 == null
-            && c.address2_line2 == null
-            && c.address2_city == null
-            && c.address2_stateorprovince == null
-            && c.address2_country == null
-            && c.address2_postalcode == null)
+        if (c.Address1_Line1 == null
+            && c.Address1_Line2 == null
+            && c.Address1_City == null
+            && c.Address1_StateOrProvince == null
+            && c.Address1_Country == null
+            && c.Address1_PostalCode == null
+            && c.Address2_Line1 == null
+            && c.Address2_Line2 == null
+            && c.Address2_City == null
+            && c.Address2_StateOrProvince == null
+            && c.Address2_Country == null
+            && c.Address2_PostalCode == null)
             return null;
-        return c.address1_line1 == c.address2_line1 &&
-            c.address1_line2 == c.address2_line2 &&
-            c.address1_city == c.address2_city &&
-            c.address1_stateorprovince == c.address2_stateorprovince &&
-            c.address1_country == c.address2_country &&
-            c.address1_postalcode == c.address2_postalcode;
+        return c.Address1_Line1 == c.Address2_Line1 &&
+            c.Address1_Line2 == c.Address2_Line2 &&
+            c.Address1_City == c.Address2_City &&
+            c.Address1_StateOrProvince == c.Address2_StateOrProvince &&
+            c.Address1_Country == c.Address2_Country &&
+            c.Address1_PostalCode == c.Address2_PostalCode;
     }
 }

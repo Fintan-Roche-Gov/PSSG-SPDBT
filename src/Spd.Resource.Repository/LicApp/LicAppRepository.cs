@@ -1,18 +1,21 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
+using Microsoft.Xrm.Sdk;
+using Spd.Utilities.Dataverse;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using Task = System.Threading.Tasks.Task;
 
 namespace Spd.Resource.Repository.LicApp;
 internal class LicAppRepository : ILicAppRepository
 {
-    private readonly DynamicsContext _context;
+    private readonly DataverseContext _context;
     private readonly IMapper _mapper;
 
-    public LicAppRepository(IDynamicsContextFactory ctx, IMapper mapper)
+    public LicAppRepository(DataverseContext ctx, IMapper mapper)
     {
-        _context = ctx.CreateChangeOverwrite();
+        _context = ctx;
         _mapper = mapper;
     }
 
@@ -23,51 +26,53 @@ internal class LicAppRepository : ILicAppRepository
         CancellationToken ct,
         LicenceTermEnum? term = null)
     {
-        spd_application? app = await _context.GetApplicationById(applicationId, ct);
+        Spd_Application? app = _context.Spd_ApplicationSet.Where(a => a.Spd_ApplicationId == applicationId).FirstOrDefault();
         if (app == null)
             throw new ApiException(HttpStatusCode.BadRequest, "Invalid ApplicationId");
 
-        app.statuscode = (int)Enum.Parse<ApplicationStatusOptionSet>(status.ToString());
+        app.StatusCode = Enum.Parse<Spd_Application_StatusCode>(status.ToString());
 
         if (status == ApplicationStatusEnum.Submitted)
-            app.statecode = DynamicsConstants.StateCode_Inactive;
+            app.StateCode = Spd_Application_StateCode.Inactive;
 
-        app.spd_submittedon = DateTimeOffset.UtcNow;
-        app.spd_portalmodifiedon = DateTimeOffset.UtcNow;
+        app.Spd_SubmittedOn = DateTime.UtcNow;
+        app.Spd_PortalModifiedOn = DateTime.UtcNow;
 
         if (price != null && price >= 0)
-            app.spd_licencefee = price;
+            app.Spd_LicenceFee = new Money(price.Value);
 
         if (term != null) //spdbt-3194
         {
             int? bizLicAppTerm = (int?)SharedMappingFuncs.GetOptionset<LicenceTermEnum, LicenceTermOptionSet>(term);
-            if (bizLicAppTerm > app.spd_licenceterm)
-                app.spd_licenceterm = bizLicAppTerm;
+            if (bizLicAppTerm > (int?)app.Spd_LicenceTerm)
+                app.Spd_LicenceTerm = (Spd_LicenceTerm?)bizLicAppTerm;
         }
+
         _context.UpdateObject(app);
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
 
         // For business application, return organization id, for all others, return applicant id
-        if (app._spd_organizationid_value != null)
-            return new LicenceApplicationCmdResp((Guid)app.spd_applicationid, null, (Guid)app._spd_organizationid_value);
+        if (app.Spd_OrganizationId != null)
+            return await Task.FromResult(new LicenceApplicationCmdResp(app.Spd_ApplicationId ?? Guid.Empty, null, app.Spd_OrganizationId.Id));
         else
-            return new LicenceApplicationCmdResp((Guid)app.spd_applicationid, (Guid)app._spd_applicantid_value, null);
+            return await Task.FromResult(new LicenceApplicationCmdResp(app.Spd_ApplicationId ?? Guid.Empty, app.Spd_ApplicantId?.Id ?? Guid.Empty, null));
     }
 
     public async Task<IEnumerable<LicenceAppListResp>> QueryAsync(LicenceAppQuery qry, CancellationToken cancellationToken)
     {
-        IQueryable<spd_application> apps = _context.spd_applications.Expand(a => a.spd_ServiceTypeId);
+        IQueryable<Spd_Application> apps = _context.Spd_ApplicationSet;
+
         if (qry.ApplicantId != null)
         {
-            apps = apps.Where(a => a._spd_applicantid_value == qry.ApplicantId);
+            apps = apps.Where(a => a.Spd_ApplicantId != null && a.Spd_ApplicantId.Id == qry.ApplicantId);
         }
-        if ((qry.BizId != null))
+        if (qry.BizId != null)
         {
-            apps = apps.Where(a => a._spd_applicantid_value == qry.BizId);
+            apps = apps.Where(a => a.Spd_ApplicantId != null && a.Spd_ApplicantId.Id == qry.BizId);
         }
         if (qry.ApplicationId != null)
         {
-            apps = apps.Where(a => a.spd_applicationid == qry.ApplicationId);
+            apps = apps.Where(a => a.Spd_ApplicationId == qry.ApplicationId);
         }
 
         var applist = apps.ToList();
@@ -75,17 +80,17 @@ internal class LicAppRepository : ILicAppRepository
         if (qry.ValidServiceTypeCodes != null && qry.ValidServiceTypeCodes.Any())
         {
             List<Guid?> serviceTypeGuid = qry.ValidServiceTypeCodes
-                .Select(c => DynamicsContextLookupHelpers.GetServiceTypeGuid(c.ToString()))
+                .Select(c => DataverseContextLookupHelpers.GetServiceTypeGuid(c.ToString()))
                 .ToList();
-            applist = applist.Where(a => serviceTypeGuid.Contains(a._spd_servicetypeid_value)).ToList();
+            applist = applist.Where(a => serviceTypeGuid.Contains(a.Spd_ServiceTypeId != null ? a.Spd_ServiceTypeId.Id : (Guid?)null)).ToList();
         }
 
         if (qry.ValidPortalStatus != null && qry.ValidPortalStatus.Any())
         {
             List<int> portalStatusInt = qry.ValidPortalStatus.Select(s => (int)Enum.Parse<ApplicationPortalStatus>(s.ToString())).ToList();
-            applist = applist.Where(a => a.spd_portalstatus != null && portalStatusInt.Contains((int)a.spd_portalstatus)).ToList();
+            applist = applist.Where(a => a.Spd_PortalStatus != null && portalStatusInt.Contains((int)a.Spd_PortalStatus)).ToList();
         }
-        return _mapper.Map<IList<LicenceAppListResp>>(applist.OrderByDescending(o => o.createdon));
 
+        return await Task.FromResult(_mapper.Map<IList<LicenceAppListResp>>(applist.OrderByDescending(o => o.CreatedOn)));
     }
 }

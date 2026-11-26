@@ -377,7 +377,7 @@ internal class PermitAppManager :
                 Subject = $"Rational update for {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingContactId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct)).TaskId;
         }
@@ -394,7 +394,7 @@ internal class PermitAppManager :
                 Subject = $"Criminal Charges or New Conviction Update on {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.High,
                 RegardingContactId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Risk_Assessment_Coordinator_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct)).TaskId;
         }

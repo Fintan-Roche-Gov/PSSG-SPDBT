@@ -481,7 +481,7 @@ internal class BizLicAppManager :
                 Subject = $"Licence Category update {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingAccountId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Client_Service_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Client_Service_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct);
         }
@@ -499,7 +499,7 @@ internal class BizLicAppManager :
                 Subject = $"Dog validation information to be updated for Business Licence {originalLic.LicenceNumber}",
                 TaskPriorityEnum = TaskPriorityEnum.Normal,
                 RegardingAccountId = originalLic.LicenceHolderId,
-                AssignedTeamId = Guid.Parse(DynamicsConstants.Licensing_Client_Service_Team_Guid),
+                AssignedTeamId = Guid.Parse(DataverseConstants.Licensing_Client_Service_Team_Guid),
                 LicenceId = originalLic.LicenceId
             }, ct);
         }
