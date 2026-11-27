@@ -1,4 +1,4 @@
-﻿using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
 
 namespace Spd.Engine.Validation
 {
@@ -9,8 +9,9 @@ namespace Spd.Engine.Validation
             List<AppInviteDuplicateCheckResult> results = new List<AppInviteDuplicateCheckResult>();
             foreach (var item in appInviteRequest.AppInviteChecks)
             {
+                ct.ThrowIfCancellationRequested();
                 //duplicated in portal invitation
-                bool hasDuplicateInvitation = await CheckInvitationDuplicateAsync(item, appInviteRequest.OrgId, ct);
+                bool hasDuplicateInvitation = CheckInvitationDuplicate(item, appInviteRequest.OrgId, ct);
                 if (hasDuplicateInvitation)
                 {
                     AppInviteDuplicateCheckResult dupResp = _mapper.Map<AppInviteDuplicateCheckResult>(item);
@@ -21,7 +22,7 @@ namespace Spd.Engine.Validation
                 if (!hasDuplicateInvitation)
                 {
                     //duplicated in application
-                    bool hasDuplicateApplication = await CheckInviteApplicationDuplicateAsync(item, appInviteRequest.OrgId, ct);
+                    bool hasDuplicateApplication = CheckInviteApplicationDuplicate(item, appInviteRequest.OrgId, ct);
                     if (hasDuplicateApplication)
                     {
                         AppInviteDuplicateCheckResult dupResp = _mapper.Map<AppInviteDuplicateCheckResult>(item);
@@ -35,27 +36,27 @@ namespace Spd.Engine.Validation
             return resp;
         }
 
-        private async Task<bool> CheckInvitationDuplicateAsync(AppInviteDuplicateCheck query, Guid orgId, CancellationToken cancellationToken)
+        private bool CheckInvitationDuplicate(AppInviteDuplicateCheck query, Guid orgId, CancellationToken cancellationToken)
         {
-            var orginvitation = await _context.spd_portalinvitations.Where(o =>
-                o.spd_OrganizationId.accountid == orgId &&
-                o.spd_firstname == query.FirstName &&
-                o.spd_surname == query.LastName &&
-                o.spd_invitationtype == (int)InvitationTypeOptionSet.ScreeningRequest &&
-                o.statecode != DataverseConstants.StateCode_Inactive
-            ).FirstOrDefaultAsync(cancellationToken);
-            return orginvitation != null;
+            cancellationToken.ThrowIfCancellationRequested();
+            return _dataverseContext.Spd_PortalInvitationSet.Any(invitation =>
+                invitation.Spd_OrganizationId != null &&
+                invitation.Spd_OrganizationId.Id == orgId &&
+                invitation.Spd_FirstName == query.FirstName &&
+                invitation.Spd_Surname == query.LastName &&
+                invitation.Spd_InvitationType == Spd_PortalInvitation_Spd_InvitationType.ScreeningRequest &&
+                invitation.StateCode != Spd_PortalInvitation_StateCode.Inactive);
         }
 
-        private async Task<bool> CheckInviteApplicationDuplicateAsync(AppInviteDuplicateCheck query, Guid orgId, CancellationToken cancellationToken)
+        private bool CheckInviteApplicationDuplicate(AppInviteDuplicateCheck query, Guid orgId, CancellationToken cancellationToken)
         {
-            var orginvitation = await _context.spd_applications.Where(o =>
-                o.spd_OrganizationId.accountid == orgId &&
-                o.spd_firstname == query.FirstName &&
-                o.spd_lastname == query.LastName &&
-                o.statecode != DataverseConstants.StateCode_Inactive
-            ).FirstOrDefaultAsync(cancellationToken);
-            return orginvitation != null;
+            cancellationToken.ThrowIfCancellationRequested();
+            return _dataverseContext.Spd_ApplicationSet.Any(application =>
+                application.Spd_OrganizationId != null &&
+                application.Spd_OrganizationId.Id == orgId &&
+                application.Spd_FirstName == query.FirstName &&
+                application.Spd_LastName == query.LastName &&
+                application.StateCode != Spd_Application_StateCode.Inactive);
         }
 
     }

@@ -74,7 +74,7 @@ internal class PaymentRepository : IPaymentRepository
         payment = _mapper.Map(cmd, payment);
         if (cmd.PaymentStatus != null)
         {
-            payment.StatusCode = (Spd_Payment_StatusCode?)(int)Enum.Parse<PaymentStatusCodeOptionSet>(cmd.PaymentStatus.ToString());
+            payment.StatusCode = (Spd_Payment_StatusCode?)(int)Enum.Parse<Spd_Payment_StatusCode>(cmd.PaymentStatus.ToString());
         }
         _context.UpdateObject(payment);
         _context.SaveChanges();

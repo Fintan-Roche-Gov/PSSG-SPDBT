@@ -1,6 +1,4 @@
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
 using System.Collections.Immutable;
 
 namespace Spd.Utilities.Dataverse
@@ -31,12 +29,12 @@ namespace Spd.Utilities.Dataverse
             {"Employee-Appointed", Guid.Parse("61b9301b-5bb8-ed11-b83e-00505683fbf4")},
             {"MetalDealerRecycler", Guid.Parse("527e0e38-91ff-ef11-b857-00505683fbf4")},
         }.ToImmutableDictionary();
-        public static spd_organizationtype? LookupOrganizationType(this DynamicsContext context, string key)
+        public static Spd_OrganizationType? LookupOrganizationType(this DataverseContext context, string key)
         {
             var keyExisted = OrganizationTypeGuidDictionary.TryGetValue(key, out Guid guid);
             if (!keyExisted) return null;
-            return context.spd_organizationtypes
-                .Where(s => s.spd_organizationtypeid == guid)
+            return context.Spd_OrganizationTypeSet
+                .Where(s => s.Spd_OrganizationTypeId == guid)
                 .FirstOrDefault();
         }
 
@@ -72,16 +70,16 @@ namespace Spd.Utilities.Dataverse
             {"BusinessManager", Guid.Parse("f32fcc57-e38f-ee11-b849-00505683fbf4")}
         }.ToImmutableDictionary();
 
-        public static spd_role? LookupRole(this DynamicsContext context, string key)
+        public static Spd_Role? LookupRole(this DataverseContext context, string key)
         {
             var keyExisted = RoleGuidDictionary.TryGetValue(key, out Guid guid);
             if (!keyExisted) return null;
-            return context.spd_roles
-                .Where(s => s.spd_roleid == guid)
+            return context.Spd_RoleSet
+                .Where(s => s.Spd_RoleId == guid)
                 .FirstOrDefault();
         }
 
-        public static string LookupRoleKeyById(this DynamicsContext context, Guid value)
+        public static string LookupRoleKeyById(this DataverseContext context, Guid value)
         {
             return RoleGuidDictionary.FirstOrDefault(x => x.Value == value).Key;
         }
@@ -184,12 +182,12 @@ namespace Spd.Utilities.Dataverse
             {"DogTrainerAccreditedSchoolVerification",  Guid.Parse("ba5ba260-cd68-f011-b85a-00505683fbf4")},
         }.ToImmutableDictionary();
 
-        public static bcgov_tag? LookupTag(this DynamicsContext context, string key)
+        public static Bcgov_Tag? LookupTag(this DataverseContext context, string key)
         {
             var keyExisted = BcGovTagDictionary.TryGetValue(key, out Guid guid);
             if (!keyExisted) return null;
-            return context.bcgov_tags
-                .Where(s => s.bcgov_tagid == guid)
+            return context.Bcgov_TagSet
+                .Where(s => s.Bcgov_TagId == guid)
                 .FirstOrDefault();
         }
         #endregion
@@ -215,17 +213,6 @@ namespace Spd.Utilities.Dataverse
             {"RetiredServiceDogCertification", Guid.Parse("77d1a69e-a3da-ef11-b856-00505683fbf4") },
             {"SpecialProvincialConstable", Guid.Parse("f4a79298-e467-f011-b85a-00505683fbf4") }
         }.ToImmutableDictionary();
-
-        public static spd_servicetype? LookupServiceType(this DynamicsContext context, string? key)
-        {
-            if (key == null) return null;
-            var keyExisted = ServiceTypeGuidDictionary.TryGetValue(key, out Guid guid);
-            if (!keyExisted) return null;
-            return context.spd_servicetypes
-                .Where(s => s.spd_servicetypeid == guid)
-                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
-                .FirstOrDefault();
-        }
 
         public static string GetServiceTypeName(Guid? serviceTypeId)
         {
@@ -263,14 +250,14 @@ namespace Spd.Utilities.Dataverse
             {"BodyArmourSales", Guid.Parse("61f0a63c-3a62-ee11-b843-005056830319")},
         }.ToImmutableDictionary();
 
-        public static spd_licencecategory? LookupLicenceCategory(this DynamicsContext context, string? key)
+        public static Spd_LicenceCategory? LookupLicenceCategory(this DataverseContext context, string? key)
         {
             if (key == null) return null;
             var keyExisted = LicenceCategoryDictionary.TryGetValue(key, out Guid guid);
             if (!keyExisted) return null;
-            return context.spd_licencecategories
-                .Where(s => s.spd_licencecategoryid == guid)
-                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
+            return context.Spd_LicenceCategorySet
+                .Where(s => s.Spd_LicenceCategoryId == guid)
+                .Where(s => s.StateCode != Spd_LicenceCategory_StateCode.Inactive)
                 .FirstOrDefault();
         }
 
@@ -294,14 +281,14 @@ namespace Spd.Utilities.Dataverse
             {"Partner", Guid.Parse("735f0b96-64ff-ef11-b857-00505683fbf4")},
         }.ToImmutableDictionary();
 
-        public static spd_position? LookupPosition(this DynamicsContext context, string? key)
+        public static Spd_Position? LookupPosition(this DataverseContext context, string? key)
         {
             if (key == null) return null;
             var keyExisted = PositionDictionary.TryGetValue(key, out Guid guid);
             if (!keyExisted) return null;
-            return context.spd_positions
-                .Where(s => s.spd_positionid == guid)
-                .Where(s => s.statecode != DataverseConstants.StateCode_Inactive)
+            return context.Spd_PositionSet
+                .Where(s => s.Spd_PositionId == guid)
+                .Where(s => s.StateCode != Spd_Position_StateCode.Inactive)
                 .FirstOrDefault();
         }
 
@@ -311,169 +298,6 @@ namespace Spd.Utilities.Dataverse
         }
         #endregion
 
-        public static async Task<spd_application?> GetApplicationById(this DynamicsContext context, Guid appId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_applications.Where(a => a.spd_applicationid == appId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-
-        }
-
-        public static async Task<spd_portaluser?> GetUserById(this DynamicsContext context, Guid userId, CancellationToken ct)
-            => await context.spd_portalusers.Expand(a => a.spd_spd_role_spd_portaluser).Where(a => a.spd_portaluserid == userId).SingleOrDefaultAsync(ct);
-
-        public static async Task<account?> GetOrgById(this DynamicsContext context, Guid organizationId, CancellationToken ct)
-        {
-            try
-            {
-                account? account = await context.accounts
-                    .Expand(a => a.spd_account_spd_servicetype)
-                    .Where(a => a.accountid == organizationId)
-                    .SingleOrDefaultAsync(ct);
-                return account;
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
-
-        public static async Task<spd_orgregistration?> GetOrgRegistrationById(this DynamicsContext context, Guid orgRegistrationId, CancellationToken ct)
-        {
-            try
-            {
-                spd_orgregistration? registration = await context.spd_orgregistrations
-                    .Where(a => a.spd_orgregistrationid == orgRegistrationId)
-                    .SingleOrDefaultAsync(ct);
-                return registration;
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
-
-        public static async Task<spd_clearance?> GetClearanceById(this DynamicsContext context, Guid clearanceId, CancellationToken ct)
-           => await context.spd_clearances.Where(a => a.spd_clearanceid == clearanceId)
-            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
-            .SingleOrDefaultAsync(ct);
-
-        public static async Task<spd_clearanceaccess?> GetClearanceAccessById(this DynamicsContext context, Guid clearanceAccessId, CancellationToken ct)
-           => await context.spd_clearanceaccesses.Where(a => a.spd_clearanceaccessid == clearanceAccessId)
-            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
-            .SingleOrDefaultAsync(ct);
-
-        public static async Task<contact?> GetContactById(this DynamicsContext context, Guid contactId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.contacts.Where(a => a.contactid == contactId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-
-        }
-
-        public static async Task<spd_businesscontact?> GetBizContactById(this DynamicsContext context, Guid bizContactId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_businesscontacts.Where(a => a.spd_businesscontactid == bizContactId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
-
-        public static async Task<task?> GetTaskById(this DynamicsContext context, Guid taskId, CancellationToken ct)
-           => await context.tasks.Where(a => a.activityid == taskId)
-            .Where(a => a.statecode != DataverseConstants.StateCode_Inactive)
-            .SingleOrDefaultAsync(ct);
-        public static async Task<spd_identity?> GetIdentityById(this DynamicsContext context, Guid identityId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_identities.Where(a => a.spd_identityid == identityId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-
-        }
-
-        public static async Task<spd_payment?> GetPaymentById(this DynamicsContext context, Guid paymentId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_payments.Where(p => p.spd_paymentid == paymentId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
-
-        public static async Task<spd_delegate?> GetDelegateById(this DynamicsContext context, Guid delegateId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_delegates.Where(a => a.spd_delegateid == delegateId).SingleOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
-
-        public static async Task<spd_eventqueue?> GetEventById(this DynamicsContext context, Guid eventId, CancellationToken ct)
-        {
-            try
-            {
-                return await context.spd_eventqueues
-                    .Where(l => l.spd_eventqueueid == eventId)
-                    .FirstOrDefaultAsync(ct);
-            }
-            catch (DataServiceQueryException ex)
-            {
-                if (ex.Response.StatusCode == 404)
-                    return null;
-                else
-                    throw;
-            }
-        }
     }
 }
 

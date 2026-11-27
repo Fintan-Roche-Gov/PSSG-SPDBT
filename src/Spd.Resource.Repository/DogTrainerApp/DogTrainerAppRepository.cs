@@ -6,9 +6,9 @@ using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
-using CrmApplication = Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM.spd_application;
+using CrmApplication = Spd.Utilities.Dataverse.EarlyBound.Spd_Application;
 using CrmContact = Spd.Utilities.Dataverse.EarlyBound.Contact;
-using CrmDogTrainingSchool = Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM.spd_dogtrainingschool;
+using CrmDogTrainingSchool = Spd.Utilities.Dataverse.EarlyBound.Spd_DogTrainingSchool;
 
 namespace Spd.Resource.Repository.DogTrainerApp;
 internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRepository
@@ -18,7 +18,7 @@ internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRep
 
     public async Task<DogTrainerAppCmdResp> CreateDogTrainerAppAsync(CreateDogTrainerAppCmd cmd, CancellationToken ct)
     {
-        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+        var ebContext = _context ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
 
         Spd_Application? app = null;
         CrmContact? contact = null;
@@ -53,7 +53,7 @@ internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRep
 
     public async Task<DogTrainerAppResp> GetDogTrainerAppAsync(Guid appId, CancellationToken ct)
     {
-        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+        var ebContext = _context ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
         ct.ThrowIfCancellationRequested();
 
         Spd_Application? app = ebContext.Spd_ApplicationSet
@@ -101,9 +101,9 @@ internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRep
         return applicant;
     }
 
-    private Spd_Application PrepareNewAppDataInDbContext(CreateDogTrainerAppCmd appData, Contact applicant)
+    private Spd_Application PrepareNewAppDataInDbContext(CreateDogTrainerAppCmd appData, CrmContact applicant)
     {
-        var ebContext = _context.EarlyBoundContext ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
+        var ebContext = _context ?? throw new InvalidOperationException("EarlyBoundContext is not initialized.");
 
         CrmApplication appLegacy = _mapper.Map<CrmApplication>(appData);
         var app = appLegacy.ToEntity<Spd_Application>();
@@ -124,11 +124,11 @@ internal class DogTrainerAppRepository : DogAppBaseRepository, IDogTrainerAppRep
                 trainEvent.Spd_OrganizationId = school.ToEntityReference();
             }
 
-            SharedRepositoryFuncs.LinkTrainingEventTeam(ebContext, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, trainEvent);
+            SharedRepositoryFuncs.LinkTrainingEventTeam(ebContext, DataverseConstants.Licensing_Client_Service_Team_Guid, trainEvent);
         }
 
         SharedRepositoryFuncs.LinkServiceType(ebContext, appData.ServiceTypeCode, app);
-        SharedRepositoryFuncs.LinkTeam(ebContext, Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
+        SharedRepositoryFuncs.LinkTeam(ebContext, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 }

@@ -1,6 +1,6 @@
 ﻿namespace Spd.Utilities.Dynamics
 {
-    public static class DataverseConstants
+    public static class DynamicsConstants
     {
         public static readonly int StateCode_Active;
         public static readonly int StateCode_Inactive = 1;

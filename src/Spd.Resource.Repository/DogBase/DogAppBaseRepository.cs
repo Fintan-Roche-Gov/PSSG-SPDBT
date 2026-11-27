@@ -4,7 +4,6 @@ using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
-using DataverseContext = Spd.Utilities.Dataverse.DataverseContext;
 
 namespace Spd.Resource.Repository.DogBase;
 internal abstract class DogAppBaseRepository : IDogAppBaseRepository
@@ -30,7 +29,7 @@ internal abstract class DogAppBaseRepository : IDogAppBaseRepository
         app.Spd_SubmittedOn = DateTime.UtcNow;
         app.Spd_PortalModifiedOn = DateTime.UtcNow;
         app.Spd_LicenceFee = new Money(0);
-        _context.EarlyBoundContext.UpdateObject(app);
-        _context.EarlyBoundContext.SaveChanges();
+        _context.UpdateObject(app);
+        _context.SaveChanges();
     }
 }

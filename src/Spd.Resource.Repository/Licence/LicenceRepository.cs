@@ -1,9 +1,8 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
 using Spd.Utilities.Dataverse;
-using Spd.Utilities.Dynamics;
+using Spd.Utilities.Dataverse.EarlyBound;
 using Spd.Utilities.Shared.Exceptions;
+using CrmContact = Spd.Utilities.Dataverse.EarlyBound.Contact;
 
 namespace Spd.Resource.Repository.Licence;
 internal class LicenceRepository : ILicenceRepository
@@ -19,113 +18,99 @@ internal class LicenceRepository : ILicenceRepository
 
     public async Task<LicenceBasicResp?> GetBasicAsync(Guid licenceId, CancellationToken ct)
     {
-        spd_licence? licence;
-        try
-        {
-            licence = await _context.spd_licences
-                .Where(l => l.spd_licenceid == licenceId)
-                .FirstOrDefaultAsync(ct);
-        }
-        catch (DataServiceQueryException ex)
-        {
-            if (ex.Response.StatusCode == 404)
-                return null;
-            else
-                throw;
-        }
+        ct.ThrowIfCancellationRequested();
+        Spd_Licence? licence = _context.Spd_LicenceSet
+            .Where(l => l.Spd_LicenceId == licenceId)
+            .FirstOrDefault();
 
-        return _mapper.Map<LicenceBasicResp>(licence);
+        return _mapper.Map<LicenceBasicResp?>(licence);
     }
 
     public async Task<LicenceResp?> GetAsync(Guid licenceId, CancellationToken ct)
     {
-        spd_licence? licence;
-        try
-        {
-            licence = await _context.spd_licences
-                .Expand(i => i.spd_LicenceHolder_contact)
-                .Expand(i => i.spd_LicenceHolder_account)
-                .Expand(i => i.spd_spd_licence_spd_licencecondition)
-                .Expand(i => i.spd_CaseId)
-                .Expand(i => i.spd_SoleProprietorId)
-                .Expand(i => i.spd_spd_licence_spd_caselicencecategory_licenceid)
-                .Expand(i => i.spd_licence_spd_dogteam_LicenceId)
-                .Expand(i => i.spd_BadgeId)
-                .Where(l => l.spd_licenceid == licenceId)
-                .FirstOrDefaultAsync(ct);
-        }
-        catch (DataServiceQueryException ex)
-        {
-            if (ex.Response.StatusCode == 404)
-                return null;
-            else
-                throw;
-        }
+        ct.ThrowIfCancellationRequested();
+        Spd_Licence? licence = _context.Spd_LicenceSet
+            .Where(l => l.Spd_LicenceId == licenceId)
+            .FirstOrDefault();
 
-        return _mapper.Map<LicenceResp>(licence);
+        if (licence != null)
+            LoadLicenceDetails(licence, ct);
+
+        return _mapper.Map<LicenceResp?>(licence);
     }
 
     public async Task<LicenceListResp> QueryAsync(LicenceQry qry, CancellationToken ct)
     {
-        IQueryable<spd_licence> lics = _context.spd_licences
-            .Expand(i => i.spd_spd_licence_spd_caselicencecategory_licenceid)
-            .Expand(i => i.spd_spd_licence_spd_licencecondition)
-            .Expand(i => i.spd_LicenceHolder_contact)
-            .Expand(i => i.spd_LicenceHolder_account)
-            .Expand(i => i.spd_licence_spd_dogteam_LicenceId)
-            .Expand(i => i.spd_CaseId);
+        ct.ThrowIfCancellationRequested();
+        IQueryable<Spd_Licence> lics = _context.Spd_LicenceSet;
 
         if (!qry.IncludeInactive)
-            lics = lics.Where(d => d.statecode != DataverseConstants.StateCode_Inactive);
+            lics = lics.Where(d => d.StateCode != Spd_Licence_StateCode.Inactive);
 
         if (qry.IncludeInactive)
-            lics = lics.Where(d => d.statuscode != (int)LicenceStatusOptionSet.Inactive);
+            lics = lics.Where(d => d.StatusCode != Spd_Licence_StatusCode.Inactive);
 
         if (qry.LicenceId != null)
-        {
-            lics = lics.Where(a => a.spd_licenceid == qry.LicenceId);
-        }
+            lics = lics.Where(a => a.Spd_LicenceId == qry.LicenceId);
+
         if (qry.ContactId != null)
-        {
-            lics = lics.Where(a => a._spd_licenceholder_value == qry.ContactId);
-        }
+            lics = lics.Where(a => a.Spd_LicenceHolder != null && a.Spd_LicenceHolder.Id == qry.ContactId);
+
         if (qry.AccountId != null)
-        {
-            lics = lics.Where(a => a._spd_licenceholder_value == qry.AccountId);
-        }
+            lics = lics.Where(a => a.Spd_LicenceHolder != null && a.Spd_LicenceHolder.Id == qry.AccountId);
+
         if (qry.LicenceNumber != null)
-        {
-            lics = lics.Where(a => a.spd_licencenumber == qry.LicenceNumber);
-        }
+            lics = lics.Where(a => a.Spd_LicenceNumber == qry.LicenceNumber);
+
         if (qry.Type != null)
         {
             Guid? serviceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(qry.Type.ToString());
-            lics = lics.Where(l => l._spd_licencetype_value == serviceTypeId);
+            lics = serviceTypeId.HasValue
+                ? lics.Where(l => l.Spd_LicenceType != null && l.Spd_LicenceType.Id == serviceTypeId)
+                : lics.Where(l => l.Spd_LicenceType == null);
         }
+
         if (qry.IsExpired != null)
-        {
-            lics = (bool)qry.IsExpired ? lics.Where(l => l.statuscode == (int)LicenceStatusOptionSet.Expired) :
-                lics.Where(l => l.statuscode != (int)LicenceStatusOptionSet.Expired);
-        }
-        if (qry.LastName != null || qry.FirstName != null)
-        {
-            lics = lics.Where(a => a.spd_LicenceHolder_contact.firstname == qry.FirstName && a.spd_LicenceHolder_contact.lastname == qry.LastName);
-        }
-        if (qry.BizName != null)
-        {
-            lics = lics.Where(a => a.spd_LicenceHolder_account.name.StartsWith(qry.BizName) || a.spd_LicenceHolder_account.spd_organizationlegalname.StartsWith(qry.BizName));
-        }
+            lics = qry.IsExpired.Value
+                ? lics.Where(l => l.StatusCode == Spd_Licence_StatusCode.Expired)
+                : lics.Where(l => l.StatusCode != Spd_Licence_StatusCode.Expired);
+
         var result = lics.ToList();
+        bool hasHolderFilter = qry.AccessCode != null || qry.LastName != null || qry.FirstName != null || qry.BizName != null;
+        if (hasHolderFilter)
+        {
+            foreach (Spd_Licence licence in result)
+                LoadLicenceHolder(licence, ct);
+        }
+
         if (qry.AccessCode != null)
         {
             Guid? mdraServiceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.MDRA.ToString());
             Guid? bizServiceTypeId = DataverseContextLookupHelpers.GetServiceTypeGuid(ServiceTypeEnum.SecurityBusinessLicence.ToString());
             result = result.Where(r =>
-                (r._spd_licencetype_value == mdraServiceTypeId && r.spd_LicenceHolder_account?.spd_accesscode == qry.AccessCode)
-                || (r._spd_licencetype_value == bizServiceTypeId && r.spd_LicenceHolder_account?.spd_accesscode == qry.AccessCode)
-                || r.spd_LicenceHolder_contact?.spd_accesscode == qry.AccessCode).ToList();
+                ((r.Spd_LicenceType?.Id == mdraServiceTypeId || r.Spd_LicenceType?.Id == bizServiceTypeId)
+                    && r.Spd_Account_Spd_Licence_LicenceHolder?.Spd_AccessCode == qry.AccessCode)
+                || r.Spd_Contact_Spd_Licence_LicenceHolder?.Spd_AccessCode == qry.AccessCode).ToList();
         }
-        return new LicenceListResp()
+
+        if (qry.LastName != null || qry.FirstName != null)
+        {
+            result = result.Where(licence =>
+                licence.Spd_Contact_Spd_Licence_LicenceHolder?.FirstName == qry.FirstName
+                && licence.Spd_Contact_Spd_Licence_LicenceHolder?.LastName == qry.LastName).ToList();
+        }
+
+        if (qry.BizName != null)
+        {
+            result = result.Where(licence =>
+                licence.Spd_Account_Spd_Licence_LicenceHolder?.Name?.StartsWith(qry.BizName) == true
+                || licence.Spd_Account_Spd_Licence_LicenceHolder?.Spd_OrganizationLegalName?.StartsWith(qry.BizName) == true).ToList();
+        }
+
+        foreach (Spd_Licence licence in result)
+            LoadLicenceDetails(licence, ct, loadHolder: !hasHolderFilter);
+
+        return new LicenceListResp
         {
             Items = _mapper.Map<IEnumerable<LicenceResp>>(result)
         };
@@ -133,16 +118,64 @@ internal class LicenceRepository : ILicenceRepository
 
     public async Task<LicenceResp> ManageAsync(UpdateLicenceCmd cmd, CancellationToken ct)
     {
-        IQueryable<spd_licence> lics = _context.spd_licences
-            .Expand(i => i.spd_LicenceHolder_contact)
-            .Where(i => i.spd_licenceid == cmd.LicenceID);
-        spd_licence? lic = lics.FirstOrDefault();
+        ct.ThrowIfCancellationRequested();
+        Spd_Licence? lic = _context.Spd_LicenceSet
+            .Where(i => i.Spd_LicenceId == cmd.LicenceID)
+            .FirstOrDefault();
         if (lic == null)
             throw new ApiException(System.Net.HttpStatusCode.BadRequest, "Invalid licenceId");
-        _mapper.Map<PermitLicence, spd_licence>(cmd.PermitLicence, lic);
+
+        _mapper.Map<PermitLicence, Spd_Licence>(cmd.PermitLicence, lic);
         _context.UpdateObject(lic);
-        await _context.SaveChangesAsync(ct);
+        _context.SaveChanges();
+
+        LoadLicenceDetails(lic, ct);
         return _mapper.Map<LicenceResp>(lic);
+    }
+
+    private void LoadLicenceHolder(Spd_Licence licence, CancellationToken ct)
+    {
+        if (licence.Spd_LicenceHolder == null)
+            return;
+
+        if (licence.Spd_LicenceHolder.LogicalName == Account.EntityLogicalName)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Account_Spd_Licence_LicenceHolder));
+        }
+        else if (licence.Spd_LicenceHolder.LogicalName == CrmContact.EntityLogicalName)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Contact_Spd_Licence_LicenceHolder));
+        }
+    }
+
+    private void LoadLicenceDetails(Spd_Licence licence, CancellationToken ct, bool loadHolder = true)
+    {
+        if (loadHolder)
+            LoadLicenceHolder(licence, ct);
+
+        if (licence.Spd_CaseId != null)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Incident_Spd_Licence));
+        }
+
+        ServiceTypeEnum? serviceType = SharedMappingFuncs.GetServiceType(licence.Spd_LicenceType?.Id);
+        if (serviceType != ServiceTypeEnum.SpecialProvincialConstable)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Spd_Licence_Spd_CaseLicenceCategory_LicenceId));
+        }
+
+        ct.ThrowIfCancellationRequested();
+        _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Spd_Licence_Spd_LicenceCondition));
+
+        if (serviceType == ServiceTypeEnum.GDSDTeamCertification)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.LoadProperty(licence, nameof(Spd_Licence.Spd_Licence_Spd_DogTeam_LicenceId));
+        }
     }
 }
 

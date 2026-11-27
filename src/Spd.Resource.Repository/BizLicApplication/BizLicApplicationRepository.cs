@@ -13,9 +13,9 @@ internal class BizLicApplicationRepository : IBizLicApplicationRepository
     private readonly DataverseContext _context;
     private readonly IMapper _mapper;
 
-    public BizLicApplicationRepository(IDataverseFactoryContext ctx, IMapper mapper)
+    public BizLicApplicationRepository(IDataverseContextFactory ctx, IMapper mapper)
     {
-        _context = ctx;
+        _context = ctx.Create();
         _mapper = mapper;
     }
 
@@ -51,7 +51,7 @@ internal class BizLicApplicationRepository : IBizLicApplicationRepository
             throw new ApiException(HttpStatusCode.NotFound);
 
         await SetInfoFromBiz(biz, app, cmd.ApplicantIsBizManager ?? false, ct);
-        LinkTeam(Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
+        LinkTeam(DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         await SetApplicantSwlLicenceId(app, cmd.ApplicantSwlLicenceId, ct);
         LinkServiceType(cmd.ServiceTypeCode, app);
         LinkSubmittedByPortalUser(cmd.SubmittedByPortalUserId, app);
@@ -104,7 +104,7 @@ internal class BizLicApplicationRepository : IBizLicApplicationRepository
             throw new ApiException(HttpStatusCode.NotFound);
 
         await SetInfoFromBiz(biz, app, cmd.ApplicantIsBizManager ?? false, ct);
-        LinkTeam(Spd.Utilities.Dynamics.DataverseConstants.Licensing_Client_Service_Team_Guid, app);
+        LinkTeam(DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         LinkServiceType(cmd.ServiceTypeCode, app);
 
         if (cmd.HasExpiredLicence == true && cmd.ExpiredLicenceId != null)

@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dataverse.EarlyBound;
-using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
 using EbContact = global::Spd.Utilities.Dataverse.EarlyBound.Contact;

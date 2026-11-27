@@ -3,10 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.PowerPlatform.Dataverse.Client;
-using Spd.Utilities.Dataverse;
-using Spd.Utilities.Dynamics;
-using System.Configuration;
-using static IdentityModel.ClaimComparer;
+using Spd.Utilities.Hosting;
 
 namespace Spd.Utilities.Dataverse;
 
@@ -14,16 +11,20 @@ public class Configuration
 {
     private readonly IConfiguration _configuration;
     private readonly IServiceCollection _services;
-    var options = configuration.GetSection("Dynamics").Get<DynamicsSettings>()!;
-
 
     public Configuration( IConfiguration configuration, IServiceCollection services)
     {
         _services = services;
         _configuration = configuration;
     }
-    public void ConfigureServices()
+    public void ConfigureServices(ConfigurationContext configurationServices)
     {
+        var configuration = configurationServices.Configuration;
+        var services = configurationServices.Services;
+
+        var options = configuration.GetSection("Dynamics").Get<DynamicsSettings>()!;
+        services.Configure<DynamicsSettings>(opts => configuration.GetSection("Dynamics").Bind(opts));
+        services.AddHttpClient("oauth").SetHandlerLifetime(TimeSpan.FromMinutes(50));
         switch (options.AuthenticationType)
         {
             case DynamicsAuthenticationType.OnPremise:

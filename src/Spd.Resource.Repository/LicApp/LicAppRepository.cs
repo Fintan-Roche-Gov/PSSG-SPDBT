@@ -2,7 +2,6 @@ using AutoMapper;
 using Microsoft.Xrm.Sdk;
 using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dataverse.EarlyBound;
-using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
 using Task = System.Threading.Tasks.Task;
@@ -43,7 +42,7 @@ internal class LicAppRepository : ILicAppRepository
 
         if (term != null) //spdbt-3194
         {
-            int? bizLicAppTerm = (int?)SharedMappingFuncs.GetOptionset<LicenceTermEnum, LicenceTermOptionSet>(term);
+            int? bizLicAppTerm =(int?)SharedMappingFuncs.GetOptionset<LicenceTermEnum, LicenceTermOptionSet>(term);
             if (bizLicAppTerm > (int?)app.Spd_LicenceTerm)
                 app.Spd_LicenceTerm = (Spd_LicenceTerm?)bizLicAppTerm;
         }

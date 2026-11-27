@@ -1,151 +1,136 @@
 using AutoMapper;
-using Microsoft.Dynamics.CRM.Microsoft.Dynamics.CRM;
-using Microsoft.OData.Client;
 using Spd.Resource.Repository.DogBase;
 using Spd.Utilities.Dataverse;
 using Spd.Utilities.Dataverse.EarlyBound;
+using Spd.Utilities.Dynamics;
 using Spd.Utilities.Shared.Exceptions;
 using System.Net;
+using ApplicationEntity = Spd.Utilities.Dataverse.EarlyBound.Spd_Application;
+using ContactEntity = Spd.Utilities.Dataverse.EarlyBound.Contact;
+
 namespace Spd.Resource.Repository.RetiredDogApp;
+
 internal class RetiredDogAppRepository : DogAppBaseRepository, IRetiredDogAppRepository
 {
     public RetiredDogAppRepository(IDataverseContextFactory ctx, IMapper mapper) : base(ctx, mapper)
     {
     }
 
-    public async Task<RetiredDogAppCmdResp> CreateRetiredDogAppAsync(CreateRetiredDogAppCmd cmd, CancellationToken ct)
+    public System.Threading.Tasks.Task<RetiredDogAppCmdResp> CreateRetiredDogAppAsync(CreateRetiredDogAppCmd cmd, CancellationToken ct)
     {
-        spd_application? app = null;
-        contact? contact = null;
+        ct.ThrowIfCancellationRequested();
+        ApplicationEntity app;
+        ContactEntity contact;
+
         if (cmd.ApplicationTypeCode == ApplicationTypeEnum.New)
         {
-            contact = _mapper.Map<contact>(cmd);
-            _context.AddTocontacts(contact);
-            app = _mapper.Map<spd_application>(cmd);
-            app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
-            _context.AddTospd_applications(app);
+            contact = _mapper.Map<ContactEntity>(cmd);
+            _context.AddObject(contact);
+            app = _mapper.Map<ApplicationEntity>(cmd);
+            app.StatusCode = Spd_Application_StatusCode.Incomplete;
+            _context.AddObject(app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
             SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
-            _context.SetLink(app, nameof(app.spd_ApplicantId_contact), contact);
+            app.Spd_ApplicantId = contact.ToEntityReference();
         }
-        else if (cmd.ApplicationTypeCode == ApplicationTypeEnum.Renewal || cmd.ApplicationTypeCode == ApplicationTypeEnum.Replacement)
+        else if (cmd.ApplicationTypeCode == ApplicationTypeEnum.Renewal ||
+                 cmd.ApplicationTypeCode == ApplicationTypeEnum.Replacement)
         {
-            app = _mapper.Map<spd_application>(cmd);
-            _context.AddTospd_applications(app);
-            contact = UpdateContact(cmd, (Guid)cmd.ApplicantId);
-            if (contact != null)
-            {
-                _context.SetLink(app, nameof(spd_application.spd_ApplicantId_contact), contact);
-            }
+            if (!cmd.ApplicantId.HasValue)
+                throw new ApiException(HttpStatusCode.BadRequest, "Cannot find the applicant");
+
+            app = _mapper.Map<ApplicationEntity>(cmd);
+            _context.AddObject(app);
+            contact = UpdateContact(cmd, cmd.ApplicantId.Value, ct);
+            app.Spd_ApplicantId = contact.ToEntityReference();
             SharedRepositoryFuncs.LinkLicence(_context, cmd.OriginalLicenceId, app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
             SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
             SharedRepositoryFuncs.LinkDog(_context, cmd.DogId, app);
         }
-        await _context.SaveChangesAsync(ct);
-        if (app == null || contact == null)
+        else
+        {
+            throw new ApiException(HttpStatusCode.BadRequest, "Unsupported application type");
+        }
+
+        ct.ThrowIfCancellationRequested();
+        _context.SaveChanges();
+        if (!app.Spd_ApplicationId.HasValue || !contact.ContactId.HasValue)
             throw new ApiException(HttpStatusCode.InternalServerError);
-        return new RetiredDogAppCmdResp((Guid)app.spd_applicationid, contact.contactid.Value);
+
+        return System.Threading.Tasks.Task.FromResult(new RetiredDogAppCmdResp(app.Spd_ApplicationId.Value, contact.ContactId.Value));
     }
 
-    public async Task<RetiredDogAppCmdResp> SaveRetiredDogAppAsync(SaveRetiredDogAppCmd cmd, CancellationToken ct)
+    public System.Threading.Tasks.Task<RetiredDogAppCmdResp> SaveRetiredDogAppAsync(SaveRetiredDogAppCmd cmd, CancellationToken ct)
     {
-        spd_application? app = null;
-        if (cmd.LicenceAppId != null)
-        {
-            contact applicant = UpdateContact(cmd, cmd.ApplicantId);
-            await _context.SaveChangesAsync(ct);
+        ct.ThrowIfCancellationRequested();
+        ContactEntity applicant = UpdateContact(cmd, cmd.ApplicantId, ct);
+        ApplicationEntity app;
 
-            app = _context.spd_applications
-                .Where(a => a.spd_applicationid == cmd.LicenceAppId)
-                .FirstOrDefault();
-            if (app == null)
-                throw new ArgumentException("invalid app id");
-            _mapper.Map<SaveRetiredDogAppCmd, spd_application>(cmd, app);
+        if (cmd.LicenceAppId.HasValue)
+        {
+            ct.ThrowIfCancellationRequested();
+            _context.SaveChanges();
+
+            ct.ThrowIfCancellationRequested();
+            app = _context.Spd_ApplicationSet
+                .Where(application => application.Spd_ApplicationId == cmd.LicenceAppId)
+                .FirstOrDefault()
+                ?? throw new ArgumentException("invalid app id");
+
+            _mapper.Map<SaveRetiredDogAppCmd, ApplicationEntity>(cmd, app);
             _context.UpdateObject(app);
             SharedRepositoryFuncs.LinkServiceType(_context, cmd.ServiceTypeCode, app);
             SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
-            await _context.SaveChangesAsync(ct);
         }
         else
         {
-            //first time user create an application, beginning
-            var contact = UpdateContact(cmd, cmd.ApplicantId);
-            app = PrepareNewAppDataInDbContext(cmd, contact);
-
-            if (contact != null)
-            {
-                _context.SetLink(app, nameof(spd_application.spd_ApplicantId_contact), contact);
-            }
-            await _context.SaveChangesAsync(ct);
+            app = PrepareNewAppDataInDbContext(cmd);
+            app.Spd_ApplicantId = applicant.ToEntityReference();
         }
 
-        if (app == null)
+        ct.ThrowIfCancellationRequested();
+        _context.SaveChanges();
+        if (!app.Spd_ApplicationId.HasValue)
             throw new ApiException(HttpStatusCode.InternalServerError);
 
-        return new RetiredDogAppCmdResp((Guid)app.spd_applicationid, cmd.ApplicantId);
+        return System.Threading.Tasks.Task.FromResult(new RetiredDogAppCmdResp(app.Spd_ApplicationId.Value, cmd.ApplicantId));
     }
 
-    public async Task<RetiredDogAppResp> GetRetiredDogAppAsync(Guid licenceApplicationId, CancellationToken ct)
+    public System.Threading.Tasks.Task<RetiredDogAppResp> GetRetiredDogAppAsync(Guid licenceApplicationId, CancellationToken ct)
     {
-        spd_application? app;
-        try
-        {
-            app = _context.spd_applications
-                .Expand(a => a.spd_ServiceTypeId)
-                .Expand(a => a.spd_ApplicantId_contact)
-                .Where(a => a.spd_applicationid == licenceApplicationId)
-                .FirstOrDefault();
-        }
-        catch (DataServiceQueryException ex)
-        {
-            if (ex.Response.StatusCode == 404)
-                app = null;
-            else
-                throw;
-        }
+        ct.ThrowIfCancellationRequested();
+        ApplicationEntity? app = _context.Spd_ApplicationSet
+            .Where(application => application.Spd_ApplicationId == licenceApplicationId)
+            .FirstOrDefault();
 
         if (app == null)
             throw new ApiException(HttpStatusCode.BadRequest, $"Cannot find the application for application id = {licenceApplicationId} ");
 
-        var response = _mapper.Map<RetiredDogAppResp>(app);
-        return response;
+        return System.Threading.Tasks.Task.FromResult(_mapper.Map<RetiredDogAppResp>(app));
     }
 
-    private spd_application PrepareNewAppDataInDbContext(SaveRetiredDogAppCmd appData, contact applicant)
+    private ApplicationEntity PrepareNewAppDataInDbContext(SaveRetiredDogAppCmd appData)
     {
-        var app = _mapper.Map<spd_application>(appData);
-        app.spd_applicationid = Guid.NewGuid();
-        app.statuscode = (int)ApplicationStatusOptionSet.Incomplete;
-        _context.AddTospd_applications(app);
+        ApplicationEntity app = _mapper.Map<ApplicationEntity>(appData);
+        app.Spd_ApplicationId = Guid.NewGuid();
+        app.StatusCode = Spd_Application_StatusCode.Incomplete;
+        _context.AddObject(app);
         SharedRepositoryFuncs.LinkServiceType(_context, appData.ServiceTypeCode, app);
         SharedRepositoryFuncs.LinkTeam(_context, DataverseConstants.Licensing_Client_Service_Team_Guid, app);
         return app;
     }
 
-    private contact UpdateContact(RetiredDogApp appData, Guid applicantId)
+    private ContactEntity UpdateContact(RetiredDogApp appData, Guid applicantId, CancellationToken ct)
     {
-        contact? applicant = _context.contacts.FirstOrDefault(c => c.contactid == applicantId);
-        if (applicant == null)
-        {
-            throw new ApiException(HttpStatusCode.BadRequest, "Cannot find the applicant");
-        }
-        _mapper.Map(appData, applicant);
+        ct.ThrowIfCancellationRequested();
+        ContactEntity applicant = _context.ContactSet
+            .Where(contact => contact.ContactId == applicantId)
+            .FirstOrDefault()
+            ?? throw new ApiException(HttpStatusCode.BadRequest, "Cannot find the applicant");
+
+        _mapper.Map<RetiredDogApp, ContactEntity>(appData, applicant);
         _context.UpdateObject(applicant);
         return applicant;
     }
-
-    private spd_application PrepareUpdateAppDataInDbContext(SaveRetiredDogAppCmd appData, Guid appId, contact applicant)
-    {
-        spd_application? app = _context.spd_applications
-            .Where(a => a.spd_applicationid == appId)
-            .FirstOrDefault();
-        if (app == null)
-            throw new ArgumentException("invalid app id");
-        _mapper.Map<SaveRetiredDogAppCmd, spd_application>(appData, app);
-        _context.UpdateObject(app);
-
-        return app;
-    }
-
 }
